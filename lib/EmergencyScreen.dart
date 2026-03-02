@@ -21,10 +21,6 @@ class EmergencyScreen extends StatelessWidget {
           child: Text("📞 Call"),
         ),
         SizedBox(width: 8),
-        ElevatedButton(
-          onPressed: () => _showMessage(context, "$name SMS button pressed!"),
-          child: Text("✉ SMS"),
-        ),
       ],
     );
   }

@@ -53,8 +53,8 @@ dependencies:
   flutter_ringtone_player: ^4.0.0
   google_mlkit_image_labeling: ^0.11.0
   vibration: ^2.0.0-nullsafety.1
-#  firebase_core: ^3.10.0   # latest version
-#  firebase_auth: ^5.2.0    # agar authentication chahiye
+  firebase_core: ^3.10.0   # latest version
+  firebase_auth: ^5.2.0    # agar authentication chahiye
 
 dev_dependencies:
   flutter_launcher_icons: ^0.13.1

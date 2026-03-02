@@ -168,6 +168,7 @@ class MyApp extends StatelessWidget {
     );
   }
 }*/
+import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/material.dart';
 
 // 🔹 Import all screens
@@ -191,14 +192,17 @@ import 'package:project/VolunteerDashboard.dart';
 import 'package:project/VolunteerScreen.dart';
 import 'package:project/BlindScreen.dart';
 import 'package:project/FamilyDashboard.dart';
-import 'package:project/SmsScreen.dart';
 import 'package:project/EditProfile.dart';
 import 'package:project/VolForgotPasswordScreen.dart';
 
 // ✅ NEW IMPORT
 import 'package:project/CallVolunteerScreen.dart';
 
-void main() {
+void main() async{
+  WidgetsFlutterBinding.ensureInitialized();
+  await Firebase.initializeApp();
+
+
   runApp(const MyApp());
 }
 
@@ -310,13 +314,6 @@ class MyApp extends StatelessWidget {
 
           case '/family':
             builder = (_) => FamilyDashboard();
-            break;
-
-          case '/sms':
-            builder = (_) => SmsScreen(
-              contactName: "John Doe",
-              contactNumber: "+923001234567",
-            );
             break;
 
           case '/volunteer':

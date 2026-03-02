@@ -328,13 +328,9 @@ class _BottomBarButtonState extends State<BottomBarButton>
   }
 }*/
 
-
-
-
 import 'package:flutter/material.dart';
 import 'CallBlind.dart';
 import 'EmergencyVideoCallScreen.dart';
-import 'SmsScreen.dart';
 import 'HistoryScreen.dart';
 import 'NotificationScreen.dart';
 import 'FamilySettingScreen.dart';
@@ -475,27 +471,14 @@ class _FamilyDashboardState extends State<FamilyDashboard>
                         contactName: blindUserName,
                         contactNumber: blindUserNumber,
                       ),
-                    ),
-                  ),
-                  const SizedBox(width: 10),
-                  Expanded(
-                    child: _buildGlassButton(
-                      color: Colors.amber,
-                      icon: Icons.message,
-                      label: "Message",
-                      screen: SmsScreen(
-                        contactName: blindUserName,
-                        contactNumber: blindUserNumber,
-                      ),
-                    ),
+                    )
                   ),
                 ],
               ),
-            ],
-          ),
-        ),
+           ]
+         ),
+       ),
       ),
-
       // 🔻 Animated Gradient Bottom Bar
       bottomNavigationBar: Container(
         padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 12),
