@@ -241,6 +241,7 @@ class _BlindDashboardScreenState extends State<BlindDashboardScreen> with Widget
 }*/
 import 'package:flutter/material.dart';
 import 'package:flutter_tts/flutter_tts.dart';
+import 'package:speech_to_text/speech_to_text.dart' as stt;
 import 'package:project/CustomAppBar.dart';
 
 class BlindDashboardScreen extends StatefulWidget {
@@ -250,22 +251,112 @@ class BlindDashboardScreen extends StatefulWidget {
   State<BlindDashboardScreen> createState() => _BlindDashboardScreenState();
 }
 
-class _BlindDashboardScreenState extends State<BlindDashboardScreen> {
+class _BlindDashboardScreenState extends State<BlindDashboardScreen> with WidgetsBindingObserver {
   final FlutterTts flutterTts = FlutterTts();
+  late stt.SpeechToText _speech;
+  bool isListening = false;
 
   @override
   void initState() {
     super.initState();
-    _speak(
+    WidgetsBinding.instance.addObserver(this);
+
+    _speech = stt.SpeechToText();
+
+    // Start initial TTS & STT
+    Future.delayed(Duration(milliseconds: 500), () {
+      _startDashboardVoiceGuide();
+    });
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    _speech.stop();
+    flutterTts.stop();
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      // Resume TTS/STT if returning from another screen
+      _startDashboardVoiceGuide();
+    }
+  }
+
+  Future<void> _startDashboardVoiceGuide() async {
+    await flutterTts.stop();
+    _speech.stop();
+    await _speak(
       "Dashboard opened. Options are: Call Volunteer, Scene Description, "
-          "SOS, Offline Help, and Edit Profile.",
+          "SOS, Offline Help, and Edit Profile. Say your choice.",
+      onComplete: _startListening,
     );
   }
 
-  Future<void> _speak(String text) async {
+  Future<void> _speak(String text, {VoidCallback? onComplete}) async {
     await flutterTts.setLanguage("en-US");
     await flutterTts.setSpeechRate(0.4);
+    await flutterTts.awaitSpeakCompletion(true);
+
+    flutterTts.setCompletionHandler(() {
+      if (onComplete != null) onComplete();
+    });
+
     await flutterTts.speak(text);
+  }
+
+  void _startListening() async {
+    if (isListening) return;
+    bool available = await _speech.initialize();
+    if (available) {
+      isListening = true;
+      _speech.listen(
+        listenFor: const Duration(seconds: 10),
+        pauseFor: const Duration(seconds: 3),
+        onResult: (result) {
+          if (result.finalResult) {
+            isListening = false;
+            _speech.stop();
+            _processVoiceCommand(result.recognizedWords.toLowerCase());
+          }
+        },
+      );
+    }
+  }
+
+  void _processVoiceCommand(String command) {
+    print("Heard: $command");
+
+    if (command.contains("call volunteer")) {
+      _speak("Calling volunteer").then((_) {
+        Navigator.pushNamed(context, '/callVolunteer').then((_) => _startDashboardVoiceGuide());
+      });
+    }
+    else if (command.contains("scene description") || command.contains("scene")) {
+      _speak("Opening scene description").then((_) {
+        Navigator.pushNamed(context, '/scene').then((_) => _startDashboardVoiceGuide());
+      });
+    }
+    else if (command.contains("sos")) {
+      _speak("SOS activated").then((_) {
+        Navigator.pushNamed(context, '/sos').then((_) => _startDashboardVoiceGuide());
+      });
+    }
+    else if (command.contains("offline help") || command.contains("help")) {
+      _speak("Opening offline help").then((_) {
+        Navigator.pushNamed(context, '/offline').then((_) => _startDashboardVoiceGuide());
+      });
+    }
+    else if (command.contains("edit profile") || command.contains("profile")) {
+      _speak("Opening edit profile").then((_) {
+        Navigator.pushNamed(context, '/editprofile').then((_) => _startDashboardVoiceGuide());
+      });
+    }
+    else {
+      _speak("Sorry, I did not recognize that. Please say again.", onComplete: _startListening);
+    }
   }
 
   Widget buildButton({
@@ -325,58 +416,49 @@ class _BlindDashboardScreenState extends State<BlindDashboardScreen> {
           crossAxisSpacing: 16,
           mainAxisSpacing: 16,
           children: [
-            // 📞 CALL VOLUNTEER
             buildButton(
               label: "Call Volunteer",
               icon: Icons.videocam,
               colors: [Colors.lightBlueAccent, Colors.blue],
               onPressed: () {
-                _speak("Calling volunteer.");
-                Navigator.pushNamed(context, '/callVolunteer');
+                _speak("Calling volunteer");
+                Navigator.pushNamed(context, '/callVolunteer').then((_) => _startDashboardVoiceGuide());
               },
             ),
-
-            // 👁 SCENE DESCRIPTION
             buildButton(
               label: "Scene Description",
               icon: Icons.remove_red_eye_outlined,
               colors: [Colors.cyanAccent, Colors.teal],
               onPressed: () {
-                _speak("Opening scene description.");
-                Navigator.pushNamed(context, '/scene');
+                _speak("Opening scene description");
+                Navigator.pushNamed(context, '/scene').then((_) => _startDashboardVoiceGuide());
               },
             ),
-
-            // 🚨 SOS
             buildButton(
               label: "SOS",
               icon: Icons.notification_important_outlined,
               colors: [Colors.redAccent, Colors.deepOrange],
               onPressed: () {
-                _speak("SOS activated.");
-                Navigator.pushNamed(context, '/sos');
+                _speak("SOS activated");
+                Navigator.pushNamed(context, '/sos').then((_) => _startDashboardVoiceGuide());
               },
             ),
-
-            // 📶 OFFLINE HELP
             buildButton(
               label: "Offline Help",
               icon: Icons.help_outline,
               colors: [Colors.indigoAccent, Colors.blue],
               onPressed: () {
-                _speak("Opening offline help.");
-                Navigator.pushNamed(context, '/offline');
+                _speak("Opening offline help");
+                Navigator.pushNamed(context, '/offline').then((_) => _startDashboardVoiceGuide());
               },
             ),
-
-            // 👤 EDIT PROFILE
             buildButton(
               label: "Edit Profile",
               icon: Icons.person_outline,
               colors: [Colors.deepPurpleAccent, Colors.purple],
               onPressed: () {
-                _speak("Opening edit profile.");
-                Navigator.pushNamed(context, '/editprofile');
+                _speak("Opening edit profile");
+                Navigator.pushNamed(context, '/editprofile').then((_) => _startDashboardVoiceGuide());
               },
             ),
           ],
