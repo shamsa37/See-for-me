@@ -218,7 +218,7 @@ import 'package:flutter/material.dart';
 import 'package:project/BlindScreen.dart';
 import 'package:project/VolunteerScreen.dart';
 import 'package:project/CustomAppBar.dart';
-import 'package:project/FamilyDashboard.dart';
+import 'package:project/FamilyScreen.dart';
 import 'package:flutter_tts/flutter_tts.dart';
 import 'package:speech_to_text/speech_to_text.dart' as stt;
 
@@ -257,6 +257,7 @@ class HomeScreen extends StatefulWidget {
 
 class _HomeScreenState extends State<HomeScreen>
     with WidgetsBindingObserver {
+
   final FlutterTts flutterTts = FlutterTts();
   late stt.SpeechToText _speech;
 
@@ -268,7 +269,6 @@ class _HomeScreenState extends State<HomeScreen>
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     _speech = stt.SpeechToText();
-
     _initialize();
   }
 
@@ -283,7 +283,6 @@ class _HomeScreenState extends State<HomeScreen>
   void didChangeDependencies() {
     super.didChangeDependencies();
 
-    // 👇 Whenever HomeScreen becomes visible again
     Future.delayed(const Duration(milliseconds: 300), () {
       if (_allowVoice && !_voiceStarted) {
         _startVoiceFlow();
@@ -292,7 +291,11 @@ class _HomeScreenState extends State<HomeScreen>
   }
 
   Future<void> _initialize() async {
-    await _speech.initialize();
+    await _speech.initialize(
+      onStatus: (status) => print("Speech status: $status"),
+      onError: (error) => print("Speech error: $error"),
+    );
+
     _startVoiceFlow();
   }
 
@@ -309,6 +312,7 @@ class _HomeScreenState extends State<HomeScreen>
   }
 
   Future<void> _speak(String text, {VoidCallback? onComplete}) async {
+
     if (!_allowVoice) return;
 
     await flutterTts.stop();
@@ -323,35 +327,52 @@ class _HomeScreenState extends State<HomeScreen>
       }
     });
 
-    if (_allowVoice) {
-      await flutterTts.speak(text);
-    }
+    await flutterTts.speak(text);
   }
 
   Future<void> _startListening() async {
+
     if (!_allowVoice) return;
 
-    await _speech.listen(onResult: (result) {
-      String command = result.recognizedWords.toLowerCase();
+    await _speech.listen(
+      listenMode: stt.ListenMode.confirmation,
+      onResult: (result) {
 
-      if (command.contains("blind")) {
-        _navigate(BlindScreen());
-      } else if (command.contains("volunteer")) {
-        _navigate(const VolunteerScreen());
-      } else if (command.contains("family")) {
-        _navigate(const FamilyDashboard());
-      }
-    });
+        if (!result.finalResult) return;
+
+        String command = result.recognizedWords.toLowerCase();
+
+        print("Heard: $command");
+
+        if (command.contains("blind")) {
+          _navigate(BlindScreen());
+        }
+        else if (command.contains("volunteer")) {
+          _navigate(const VolunteerScreen());
+        }
+        else if (command.contains("family")) {
+          _navigate(const FamilyScreen());
+        }
+        else {
+
+          /// command not recognized → listen again
+          _startListening();
+        }
+
+      },
+    );
   }
 
   Future<void> _stopVoice() async {
     _allowVoice = false;
     _voiceStarted = false;
+
     await flutterTts.stop();
     await _speech.stop();
   }
 
   Future<void> _navigate(Widget screen) async {
+
     await _stopVoice();
 
     await Navigator.push(
@@ -359,7 +380,7 @@ class _HomeScreenState extends State<HomeScreen>
       MaterialPageRoute(builder: (_) => screen),
     );
 
-    // 👇 When coming back to HomeScreen
+    /// when coming back
     _allowVoice = true;
     _voiceStarted = false;
 
@@ -378,21 +399,28 @@ class _HomeScreenState extends State<HomeScreen>
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
+
               const GradientText("Welcome to Home Screen!", fontSize: 30),
+
               const SizedBox(height: 30),
+
               _buildButton(
                 label: "Blind",
                 onPressed: () => _navigate(BlindScreen()),
               ),
+
               const SizedBox(height: 10),
+
               _buildButton(
                 label: "Volunteer",
                 onPressed: () => _navigate(const VolunteerScreen()),
               ),
+
               const SizedBox(height: 10),
+
               _buildButton(
                 label: "Family",
-                onPressed: () => _navigate(const FamilyDashboard()),
+                onPressed: () => _navigate(const FamilyScreen()),
               ),
             ],
           ),
@@ -401,8 +429,11 @@ class _HomeScreenState extends State<HomeScreen>
     );
   }
 
-  Widget _buildButton(
-      {required String label, required VoidCallback onPressed}) {
+  Widget _buildButton({
+    required String label,
+    required VoidCallback onPressed
+  }) {
+
     return SizedBox(
       width: 220,
       height: 55,
@@ -410,13 +441,16 @@ class _HomeScreenState extends State<HomeScreen>
         style: ElevatedButton.styleFrom(
           backgroundColor: Colors.purple,
           foregroundColor: Colors.white,
-          shape:
-          RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+          shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(12)),
         ),
         onPressed: onPressed,
-        child: Text(label,
-            style:
-            const TextStyle(fontSize: 27, fontWeight: FontWeight.w700)),
+        child: Text(
+          label,
+          style: const TextStyle(
+              fontSize: 27,
+              fontWeight: FontWeight.w700),
+        ),
       ),
     );
   }

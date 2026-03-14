@@ -40,6 +40,7 @@ class _sos_screenState extends State<sos_screen> {
   Future<void> _loadContacts() async {
     final prefs = await SharedPreferences.getInstance();
     final savedData = prefs.getString('contacts');
+
     if (savedData != null) {
       try {
         final decoded = jsonDecode(savedData);
@@ -53,14 +54,16 @@ class _sos_screenState extends State<sos_screen> {
       }
     } else {
       // Default demo contacts
-      contacts = [
-        {'name': 'MOM', 'number': '0300-1234567'},
-        {'name': 'BROTHER', 'number': '0301-2345678'},
-        {'name': 'SISTER', 'number': '0302-3456789'},
-        {'name': 'FATHER', 'number': '0303-4567890'},
-        {'name': 'FRIEND ALIZAY', 'number': '0304-5678901'},
-        {'name': 'FRIEND HARAM', 'number': '0305-6789012'},
-      ];
+      setState(() {
+        contacts = [
+          {'name': 'MOM', 'number': '0300-1234567'},
+          {'name': 'BROTHER', 'number': '0301-2345678'},
+          {'name': 'SISTER', 'number': '0302-3456789'},
+          {'name': 'FATHER', 'number': '0303-4567890'},
+          {'name': 'FRIEND ALIZAY', 'number': '0304-5678901'},
+          {'name': 'FRIEND HARAM', 'number': '0305-6789012'},
+        ];
+      });
     }
   }
 

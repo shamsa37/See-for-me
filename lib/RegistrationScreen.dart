@@ -1,6 +1,7 @@
 // import 'dart:async';
 // import 'package:flutter/material.dart';
 // import 'package:project/BlindDashboardScreen.dart';
+// import 'package:project/BlindScreen.dart';
 // import 'package:speech_to_text/speech_to_text.dart' as stt;
 // import 'package:flutter_tts/flutter_tts.dart';
 //
@@ -26,10 +27,8 @@
 //   bool isFemale = false;
 //
 //   double _opacity = 0.0;
-//
 //   List<String> steps = ["username","email","phone","password","gender","register"];
 //
-//   // Text controllers for showing recognized speech
 //   late TextEditingController usernameController;
 //   late TextEditingController emailController;
 //   late TextEditingController phoneController;
@@ -48,12 +47,14 @@
 //     phoneController = TextEditingController();
 //     passwordController = TextEditingController();
 //
+//     // Fade in effect
 //     Timer(const Duration(milliseconds: 300), () {
 //       setState(() {
 //         _opacity = 1.0;
 //       });
 //     });
 //
+//     // Start TTS/STT
 //     _initTTS();
 //   }
 //
@@ -72,7 +73,7 @@
 //   @override
 //   void didChangeAppLifecycleState(AppLifecycleState state) {
 //     if (state == AppLifecycleState.resumed) {
-//       Future.delayed(Duration(milliseconds: 300), () {
+//       Future.delayed(const Duration(milliseconds: 300), () {
 //         _speakStep();
 //       });
 //     }
@@ -83,7 +84,7 @@
 //     await _tts.setSpeechRate(0.5);
 //     await _tts.awaitSpeakCompletion(true);
 //
-//     Future.delayed(const Duration(seconds: 1), () {
+//     Future.delayed(const Duration(milliseconds: 500), () {
 //       _speakStep();
 //     });
 //   }
@@ -99,6 +100,7 @@
 //       case 4: await _tts.speak("Say male or female"); break;
 //       case 5: await _tts.speak("Say register to complete registration"); break;
 //     }
+//
 //     _listen();
 //   }
 //
@@ -111,7 +113,12 @@
 //         onResult: (result) {
 //           if (result.finalResult) {
 //             _speech.stop();
-//             _processInput(result.recognizedWords.toLowerCase());
+//             String input = result.recognizedWords.toLowerCase();
+//             if (input.trim().isEmpty) {
+//               _tts.speak("Sorry, I did not recognize that. Please say again").then((_) => _listen());
+//             } else {
+//               _processInput(input);
+//             }
 //           }
 //         },
 //       );
@@ -129,20 +136,22 @@
 //   }
 //
 //   void _processInput(String input) async {
-//     // Go back to home
+//     // Go back to BlindScreen
 //     if (input.contains("go back") || input.contains("back")) {
-//       await _tts.speak("Going back to home");
-//       Navigator.pushReplacement(
-//         context,
-//         MaterialPageRoute(builder: (context) => BlindDashboardScreen()),
-//       );
+//       await _tts.speak("Going back to Blind Home Screen");
+//       await _speech.stop();
+//       await _tts.stop();
+//       Navigator.pop(context); // Back to BlindScreen
 //       return;
 //     }
 //
+//     // Repeat
 //     if (input.contains("repeat")) { await _tts.speak("Repeating"); _speakStep(); return; }
 //
+//     // Edit email
 //     if (input.contains("edit email")) { _currentStep = 1; await _tts.speak("Editing email. Please say your new email"); _listen(); return; }
 //
+//     // Cancel registration
 //     if (input.contains("cancel registration")) {
 //       isCancelling = true;
 //       await _tts.speak("Are you sure? Say yes to confirm cancellation");
@@ -155,6 +164,7 @@
 //       else { isCancelling = false; await _tts.speak("Continuing registration"); _speakStep(); return; }
 //     }
 //
+//     // Step-based input processing
 //     switch (_currentStep) {
 //       case 0: username = input; usernameController.text = username; await _tts.speak("Username saved"); break;
 //       case 1:
@@ -172,7 +182,6 @@
 //         else await _tts.speak("Strong password");
 //         break;
 //       case 4:
-//       // Female first, then Male to avoid "male" matching inside "female"
 //         if (input.contains("female")) { setState(() { isFemale = true; isMale = false; }); await _tts.speak("Female selected"); }
 //         else if (input.contains("male")) { setState(() { isMale = true; isFemale = false; }); await _tts.speak("Male selected"); }
 //         else { await _tts.speak("Please say male or female"); _listen(); return; }
@@ -184,11 +193,15 @@
 //           phoneController.text = phoneNumber;
 //           passwordController.text = password;
 //           await _tts.speak("Registration successful");
-//           Navigator.pushReplacement(context, MaterialPageRoute(builder: (context) => BlindDashboardScreen()));
+//           Navigator.pushReplacement(
+//             context,
+//             MaterialPageRoute(builder: (context) => BlindDashboardScreen()),
+//           );
 //           return;
 //         } else { await _tts.speak("Please say register to submit"); _listen(); return; }
 //     }
 //
+//     // Move to next step
 //     _currentStep++;
 //     if (_currentStep < steps.length) Future.delayed(const Duration(seconds: 1), () { _speakStep(); });
 //   }
@@ -283,7 +296,6 @@
 //     );
 //   }
 // }
-//
 
 import 'dart:async';
 import 'package:flutter/material.dart';
@@ -428,7 +440,10 @@ class _RegistrationScreenState extends State<RegistrationScreen> with WidgetsBin
       await _tts.speak("Going back to Blind Home Screen");
       await _speech.stop();
       await _tts.stop();
-      Navigator.pop(context); // Back to BlindScreen
+      Navigator.pushReplacement(
+        context,
+        MaterialPageRoute(builder: (context) => BlindScreen()),
+      );
       return;
     }
 
@@ -469,8 +484,14 @@ class _RegistrationScreenState extends State<RegistrationScreen> with WidgetsBin
         else await _tts.speak("Strong password");
         break;
       case 4:
-        if (input.contains("female")) { setState(() { isFemale = true; isMale = false; }); await _tts.speak("Female selected"); }
-        else if (input.contains("male")) { setState(() { isMale = true; isFemale = false; }); await _tts.speak("Male selected"); }
+        if (input.contains("female")) {
+          setState(() { isFemale = true; isMale = false; });
+          await _tts.speak("Female selected");
+        }
+        else if (input.contains("male")) {
+          setState(() { isMale = true; isFemale = false; });
+          await _tts.speak("Male selected");
+        }
         else { await _tts.speak("Please say male or female"); _listen(); return; }
         break;
       case 5:
@@ -518,25 +539,76 @@ class _RegistrationScreenState extends State<RegistrationScreen> with WidgetsBin
                 child: Form(
                   key: _formKey,
                   child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start, // FIX: Align left
                     children: [
-                      const Text('Registration', style: TextStyle(fontSize: 26, color: Color(0xFF7B1FA2), fontWeight: FontWeight.bold)),
+                      const Center(
+                        child: Text('Registration', style: TextStyle(fontSize: 26, color: Color(0xFF7B1FA2), fontWeight: FontWeight.bold)),
+                      ),
                       const SizedBox(height: 20),
                       buildTextField(label: 'Username', hint: 'Enter your username', controller: usernameController, onSaved: (val) => username = val!),
                       buildTextField(label: 'Email', hint: 'Enter your email', keyboardType: TextInputType.emailAddress, controller: emailController, onSaved: (val) => email = val!),
                       buildTextField(label: 'Phone Number', hint: 'Enter your number', keyboardType: TextInputType.phone, controller: phoneController, onSaved: (val) => phoneNumber = val!),
                       buildTextField(label: 'Password', hint: 'Enter your password', isPassword: true, controller: passwordController, onSaved: (val) => password = val!),
                       const SizedBox(height: 10),
-                      Row(
+                      Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          const Text('Gender:', style: TextStyle(fontWeight: FontWeight.bold)),
-                          Checkbox(value: isMale, activeColor: Colors.purple, onChanged: (val) => setState(() { isMale = val!; if(val) isFemale=false; })),
-                          const Text('Male'),
-                          Checkbox(value: isFemale, activeColor: Colors.purple, onChanged: (val) => setState(() { isFemale = val!; if(val) isMale=false; })),
-                          const Text('Female'),
-                          const SizedBox(width: 20),
-                          Text(
-                            isMale ? "Male selected" : isFemale ? "Female selected" : "",
-                            style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.purple),
+
+                          const Text(
+                            'Gender:',
+                            style: TextStyle(fontWeight: FontWeight.bold),
+                          ),
+
+                          const SizedBox(height: 5),
+
+                          Row(
+                            children: [
+
+                              Checkbox(
+                                value: isMale,
+                                activeColor: Colors.purple,
+                                onChanged: (val) {
+                                  setState(() {
+                                    isMale = val!;
+                                    if (val) isFemale = false;
+                                  });
+                                },
+                              ),
+
+                              const Text('Male'),
+
+                              const SizedBox(width: 20),
+
+                              Checkbox(
+                                value: isFemale,
+                                activeColor: Colors.purple,
+                                onChanged: (val) {
+                                  setState(() {
+                                    isFemale = val!;
+                                    if (val) isMale = false;
+                                  });
+                                },
+                              ),
+
+                              const Text('Female'),
+
+                              const SizedBox(width: 20),
+
+                              Expanded(
+                                child: Text(
+                                  isMale
+                                      ? "Male selected"
+                                      : isFemale
+                                      ? "Female selected"
+                                      : "",
+                                  style: const TextStyle(
+                                    fontWeight: FontWeight.bold,
+                                    color: Colors.purple,
+                                  ),
+                                ),
+                              ),
+
+                            ],
                           ),
                         ],
                       ),
