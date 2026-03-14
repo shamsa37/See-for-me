@@ -140,7 +140,7 @@ class _NotificationScreenState extends State<NotificationScreen> {
     {
       'title': '🚨 SOS Alert',
       'message': 'Blind user triggered SOS alert.',
-      'time': '2 mins ago'
+      'time': '2 minutes ago'
     },
     {
       'title': '📍 Location Update',
