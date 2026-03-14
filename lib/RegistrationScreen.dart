@@ -1,3 +1,4 @@
+<<<<<<< Updated upstream
 // import 'dart:async';
 // import 'package:flutter/material.dart';
 // import 'package:project/BlindDashboardScreen.dart';
@@ -297,12 +298,17 @@
 //   }
 // }
 
+=======
+>>>>>>> Stashed changes
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:project/BlindDashboardScreen.dart';
 import 'package:project/BlindScreen.dart';
 import 'package:speech_to_text/speech_to_text.dart' as stt;
 import 'package:flutter_tts/flutter_tts.dart';
+
+// ✅ Firebase Auth Import
+import 'auth_service.dart';
 
 class RegistrationScreen extends StatefulWidget {
   @override
@@ -348,9 +354,7 @@ class _RegistrationScreenState extends State<RegistrationScreen> with WidgetsBin
 
     // Fade in effect
     Timer(const Duration(milliseconds: 300), () {
-      setState(() {
-        _opacity = 1.0;
-      });
+      setState(() { _opacity = 1.0; });
     });
 
     // Start TTS/STT
@@ -372,9 +376,13 @@ class _RegistrationScreenState extends State<RegistrationScreen> with WidgetsBin
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed) {
+<<<<<<< Updated upstream
       Future.delayed(const Duration(milliseconds: 300), () {
         _speakStep();
       });
+=======
+      Future.delayed(Duration(milliseconds: 300), () { _speakStep(); });
+>>>>>>> Stashed changes
     }
   }
 
@@ -383,14 +391,17 @@ class _RegistrationScreenState extends State<RegistrationScreen> with WidgetsBin
     await _tts.setSpeechRate(0.5);
     await _tts.awaitSpeakCompletion(true);
 
+<<<<<<< Updated upstream
     Future.delayed(const Duration(milliseconds: 500), () {
       _speakStep();
     });
+=======
+    Future.delayed(const Duration(seconds: 1), () { _speakStep(); });
+>>>>>>> Stashed changes
   }
 
   void _speakStep() async {
     await _speech.stop();
-
     switch (_currentStep) {
       case 0: await _tts.speak("Please say your username"); break;
       case 1: await _tts.speak("Please say your email"); break;
@@ -435,6 +446,7 @@ class _RegistrationScreenState extends State<RegistrationScreen> with WidgetsBin
   }
 
   void _processInput(String input) async {
+<<<<<<< Updated upstream
     // Go back to BlindScreen
     if (input.contains("go back") || input.contains("back")) {
       await _tts.speak("Going back to Blind Home Screen");
@@ -444,11 +456,17 @@ class _RegistrationScreenState extends State<RegistrationScreen> with WidgetsBin
         context,
         MaterialPageRoute(builder: (context) => BlindScreen()),
       );
+=======
+    if (input.contains("go back") || input.contains("back")) {
+      await _tts.speak("Going back to home");
+      Navigator.pushReplacement(context, MaterialPageRoute(builder: (context) => BlindDashboardScreen()));
+>>>>>>> Stashed changes
       return;
     }
 
     // Repeat
     if (input.contains("repeat")) { await _tts.speak("Repeating"); _speakStep(); return; }
+<<<<<<< Updated upstream
 
     // Edit email
     if (input.contains("edit email")) { _currentStep = 1; await _tts.speak("Editing email. Please say your new email"); _listen(); return; }
@@ -460,6 +478,10 @@ class _RegistrationScreenState extends State<RegistrationScreen> with WidgetsBin
       _listen();
       return;
     }
+=======
+    if (input.contains("edit email")) { _currentStep = 1; await _tts.speak("Editing email. Please say your new email"); _listen(); return; }
+    if (input.contains("cancel registration")) { isCancelling = true; await _tts.speak("Are you sure? Say yes to confirm cancellation"); _listen(); return; }
+>>>>>>> Stashed changes
 
     if (isCancelling) {
       if (input.contains("yes")) { await _tts.speak("Registration cancelled"); Navigator.pop(context); return; }
@@ -484,6 +506,7 @@ class _RegistrationScreenState extends State<RegistrationScreen> with WidgetsBin
         else await _tts.speak("Strong password");
         break;
       case 4:
+<<<<<<< Updated upstream
         if (input.contains("female")) {
           setState(() { isFemale = true; isMale = false; });
           await _tts.speak("Female selected");
@@ -492,6 +515,10 @@ class _RegistrationScreenState extends State<RegistrationScreen> with WidgetsBin
           setState(() { isMale = true; isFemale = false; });
           await _tts.speak("Male selected");
         }
+=======
+        if (input.contains("female")) { setState(() { isFemale = true; isMale = false; }); await _tts.speak("Female selected"); }
+        else if (input.contains("male")) { setState(() { isMale = true; isFemale = false; }); await _tts.speak("Male selected"); }
+>>>>>>> Stashed changes
         else { await _tts.speak("Please say male or female"); _listen(); return; }
         break;
       case 5:
@@ -500,11 +527,23 @@ class _RegistrationScreenState extends State<RegistrationScreen> with WidgetsBin
           emailController.text = email;
           phoneController.text = phoneNumber;
           passwordController.text = password;
+<<<<<<< Updated upstream
           await _tts.speak("Registration successful");
           Navigator.pushReplacement(
             context,
             MaterialPageRoute(builder: (context) => BlindDashboardScreen()),
           );
+=======
+
+          // ✅ Firebase Signup for blind
+          try {
+            await AuthService().signupUser(email, password, 'blind');
+            await _tts.speak("Registration successful");
+            Navigator.pushReplacement(context, MaterialPageRoute(builder: (context) => BlindDashboardScreen()));
+          } catch(e) {
+            await _tts.speak("Registration failed, please try again");
+          }
+>>>>>>> Stashed changes
           return;
         } else { await _tts.speak("Please say register to submit"); _listen(); return; }
     }
@@ -553,6 +592,7 @@ class _RegistrationScreenState extends State<RegistrationScreen> with WidgetsBin
                       Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
+<<<<<<< Updated upstream
 
                           const Text(
                             'Gender:',
@@ -610,15 +650,27 @@ class _RegistrationScreenState extends State<RegistrationScreen> with WidgetsBin
 
                             ],
                           ),
+=======
+                          const Text('Gender:', style: TextStyle(fontWeight: FontWeight.bold)),
+                          Checkbox(value: isMale, activeColor: Colors.purple, onChanged: (val) => setState(() { isMale = val!; if(val) isFemale=false; })),
+                          const Text('Male'),
+                          Checkbox(value: isFemale, activeColor: Colors.purple, onChanged: (val) => setState(() { isFemale = val!; if(val) isMale=false; })),
+                          const Text('Female'),
+>>>>>>> Stashed changes
                         ],
                       ),
                       const SizedBox(height: 10),
                       ElevatedButton(
                         style: ElevatedButton.styleFrom(backgroundColor: Colors.purple, foregroundColor: Colors.white, minimumSize: const Size(double.infinity, 50)),
-                        onPressed: () {
+                        onPressed: () async {
                           if (_formKey.currentState!.validate()) {
                             _formKey.currentState!.save();
-                            Navigator.pushReplacement(context, MaterialPageRoute(builder: (context) => BlindDashboardScreen()));
+                            try {
+                              await AuthService().signupUser(email, password, 'blind');
+                              Navigator.pushReplacement(context, MaterialPageRoute(builder: (context) => BlindDashboardScreen()));
+                            } catch(e) {
+                              ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("Registration failed: $e")));
+                            }
                           }
                         },
                         child: const Text('REGISTER'),
