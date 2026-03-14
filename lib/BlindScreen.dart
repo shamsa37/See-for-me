@@ -150,7 +150,7 @@ class _BlindScreenState extends State<BlindScreen> {
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              const GradientText("Welcome to Blind Screen!", fontSize: 30),
+              const GradientText("Welcome to Blind Screen!!", fontSize: 30),
 
               const SizedBox(height: 40),
 
