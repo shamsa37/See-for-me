@@ -56,10 +56,9 @@ dependencies:
   firebase_core: ^3.10.0   # latest version
   firebase_auth: ^5.2.0    # agar authentication chahiye
   package_info_plus: ^9.0.0
-<<<<<<< Updated upstream
 
-=======
->>>>>>> Stashed changes
+
+
 dev_dependencies:
   flutter_launcher_icons: ^0.13.1
 
