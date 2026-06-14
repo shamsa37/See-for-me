@@ -15,11 +15,11 @@ class FamilyScreen extends StatelessWidget {
         elevation: 0,
         centerTitle: true,
         title: const Text(
-          "Family Home Screen",
+          "Family Screen",
           style: TextStyle(
             color: Colors.white,
             fontWeight: FontWeight.bold,
-            fontSize: 20,
+            fontSize: 25,
           ),
         ),
         leading: IconButton(
