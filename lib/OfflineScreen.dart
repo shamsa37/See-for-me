@@ -170,6 +170,9 @@ import 'package:project/BlindDashboardScreen.dart';
 import 'package:speech_to_text/speech_to_text.dart' as stt;
 import 'package:flutter_tts/flutter_tts.dart';
 import 'package:permission_handler/permission_handler.dart';
+// NEW IMPORTS
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 
 class OfflineScreen extends StatefulWidget {
   const OfflineScreen({super.key});
@@ -185,6 +188,9 @@ class _OfflineScreenState extends State<OfflineScreen> {
   bool _speechAvailable = false;
   String _voicePrompt = "Say a contact name or 'back' to go dashboard";
 
+  // UID Getter
+  String? get currentUid => FirebaseAuth.instance.currentUser?.uid;
+
   @override
   void initState() {
     super.initState();
@@ -193,15 +199,36 @@ class _OfflineScreenState extends State<OfflineScreen> {
     _initTTS();
   }
 
+  // ================= FIRESTORE LOGGING =================
+  Future<void> _logEmergencyAction(String actionType, String contactName, String contactNumber) async {
+    if (currentUid == null) return;
+
+    try {
+      // Path: blind -> UID -> offline_emergency_logs
+      await FirebaseFirestore.instance
+          .collection('blind')
+          .doc(currentUid)
+          .collection('offline_emergency_logs')
+          .add({
+        'action_type': actionType, // e.g., 'Voice Call' or 'Location Share'
+        'contact_name': contactName,
+        'contact_number': contactNumber,
+        'timestamp': FieldValue.serverTimestamp(),
+        'network_status': 'offline_mode_triggered',
+      });
+      debugPrint("✅ Offline action logged to Firestore");
+    } catch (e) {
+      debugPrint("❌ Firestore Logging Error: $e");
+    }
+  }
+
   Future<void> _initTTS() async {
     await _tts.setLanguage("en-US");
     await _tts.setSpeechRate(0.5);
     await _tts.awaitSpeakCompletion(true);
 
-    // Initial prompt
     await _speak(_voicePrompt);
 
-    // Announce available contacts for blind user
     String contactsAnnouncement =
         "Available contacts are Police, Edhi Ambulance, Rescue 1122, Fire Brigade, and Traffic Police. Who do you want to call?";
     await _speak(contactsAnnouncement);
@@ -224,8 +251,7 @@ class _OfflineScreenState extends State<OfflineScreen> {
     );
 
     if (!_speechAvailable) {
-      await _speak(
-          "Speech recognition is not available. Please try again later.");
+      await _speak("Speech recognition is not available. Please try again later.");
       return;
     }
 
@@ -262,6 +288,9 @@ class _OfflineScreenState extends State<OfflineScreen> {
   }
 
   void _callContact(String name, String number) async {
+    // Log to Firestore
+    await _logEmergencyAction("Voice Call", name, number);
+
     try {
       await _speak("Opening $name contact");
 
@@ -281,7 +310,6 @@ class _OfflineScreenState extends State<OfflineScreen> {
       await _speak("Call to $name could not be completed");
     } finally {
       if (mounted) {
-        // Restart TTS/STT after call
         Future.delayed(const Duration(milliseconds: 500), () async {
           await _speak(_voicePrompt);
           _startListening();
@@ -291,6 +319,9 @@ class _OfflineScreenState extends State<OfflineScreen> {
   }
 
   void _shareLocation(String name, String number) async {
+    // Log to Firestore
+    await _logEmergencyAction("Location Share", name, number);
+
     try {
       await _speak("Sharing your location with $name");
       await Navigator.push(
@@ -347,7 +378,7 @@ class _OfflineScreenState extends State<OfflineScreen> {
 
   void _processVoiceCommand(String input) {
     input = input.toLowerCase().trim();
-    input = input.replaceAll(RegExp(r'[^\w\s]'), ''); // remove punctuation
+    input = input.replaceAll(RegExp(r'[^\w\s]'), '');
     bool recognized = true;
 
     if (input.contains("back") || input.contains("dashboard")) {
@@ -360,7 +391,6 @@ class _OfflineScreenState extends State<OfflineScreen> {
       return;
     }
 
-    // Location share commands
     if (input.contains("location")) {
       if (input.contains("police")) _shareLocation("Police", "15");
       else if (input.contains("edhi")) _shareLocation("Edhi Ambulance", "115");
@@ -373,7 +403,6 @@ class _OfflineScreenState extends State<OfflineScreen> {
             .then((_) => _startListening());
       }
     } else {
-      // Outgoing call commands
       if (input.contains("police")) _callContact("Police", "15");
       else if (input.contains("edhi")) _callContact("Edhi Ambulance", "115");
       else if (input.contains("rescue")) _callContact("Rescue 1122", "1122");
@@ -391,8 +420,7 @@ class _OfflineScreenState extends State<OfflineScreen> {
     }
   }
 
-  Widget buildContactCard(
-      BuildContext context, String name, String number, String type) {
+  Widget buildContactCard(BuildContext context, String name, String number, String type) {
     return Card(
       elevation: 6,
       margin: const EdgeInsets.symmetric(vertical: 10),
@@ -402,8 +430,7 @@ class _OfflineScreenState extends State<OfflineScreen> {
       child: Padding(
         padding: const EdgeInsets.symmetric(vertical: 8),
         child: ListTile(
-          contentPadding:
-          const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+          contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
           title: Text(
             name,
             style: const TextStyle(
@@ -468,8 +495,7 @@ class _OfflineScreenState extends State<OfflineScreen> {
         automaticallyImplyLeading: true,
         title: const Text(
           "Offline Emergency",
-          style:
-          TextStyle(fontSize: 22, fontWeight: FontWeight.bold, color: Colors.white),
+          style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold, color: Colors.white),
         ),
         centerTitle: true,
       ),
@@ -484,8 +510,7 @@ class _OfflineScreenState extends State<OfflineScreen> {
             const SizedBox(height: 16),
             const Text(
               "You are Offline",
-              style: TextStyle(
-                  fontSize: 24, fontWeight: FontWeight.bold, color: Colors.black),
+              style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold, color: Colors.black),
             ),
             const SizedBox(height: 10),
             const Text(
@@ -500,18 +525,14 @@ class _OfflineScreenState extends State<OfflineScreen> {
                   borderRadius: BorderRadius.circular(10)),
               child: Text(
                 _voicePrompt,
-                style: const TextStyle(
-                    fontSize: 16,
-                    fontWeight: FontWeight.bold,
-                    color: Colors.purple),
+                style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.purple),
                 textAlign: TextAlign.center,
               ),
             ),
             const SizedBox(height: 25),
             const Text(
               "--- Emergency Contacts ---",
-              style:
-              TextStyle(fontWeight: FontWeight.bold, fontSize: 18, color: Colors.black),
+              style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18, color: Colors.black),
             ),
             const SizedBox(height: 12),
             Expanded(

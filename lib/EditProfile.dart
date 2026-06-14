@@ -159,6 +159,9 @@ import 'package:flutter_tts/flutter_tts.dart';
 import 'package:speech_to_text/speech_to_text.dart' as stt;
 import 'BlindDashboardScreen.dart';
 import 'dart:ui';
+// NEW IMPORTS
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 
 class EditProfile extends StatefulWidget {
   const EditProfile({super.key});
@@ -186,25 +189,85 @@ class _EditProfileState extends State<EditProfile> {
   void dispose() {
     _nameFocus.dispose();
     _emailFocus.dispose();
+    _nameController.dispose();
+    _emailController.dispose();
     super.dispose();
   }
 
+  // UID Getter
+  String? get currentUid => FirebaseAuth.instance.currentUser?.uid;
+
   Future<void> _loadProfile() async {
     final prefs = await SharedPreferences.getInstance();
-    _nameController.text = prefs.getString('userName') ?? '';
-    _emailController.text = prefs.getString('userEmail') ?? '';
-    // aur agar TTS/voice logic hai to wahan handle kar lo
+    setState(() {
+      _nameController.text = prefs.getString('userName') ?? '';
+      _emailController.text = prefs.getString('userEmail') ?? '';
+    });
   }
 
+  // UPDATED: Firestore Sub-collection Logic
   Future<void> _saveProfile() async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setString('userName', _nameController.text);
-    await prefs.setString('userEmail', _emailController.text);
-    await flutterTts.speak("Profile saved");
-    Navigator.pushReplacement(
-      context,
-      MaterialPageRoute(builder: (_) => BlindDashboardScreen()),
-    );
+    final name = _nameController.text.trim();
+    final email = _emailController.text.trim();
+
+    if (name.isEmpty || email.isEmpty) {
+      await flutterTts.speak("Please fill all fields");
+      return;
+    }
+
+    try {
+      User? user = FirebaseAuth.instance.currentUser;
+
+      if (user != null) {
+        // 1. Update Auth Email (Latest way)
+        if (user.email != email) {
+          // Yeh method 'updateEmail' ka naya aur behtar replacement hai
+          await user.verifyBeforeUpdateEmail(email);
+          await flutterTts.speak("A verification link has been sent to your new email. Please verify it to update your login.");
+        }
+
+        // 2. Update Firestore Sub-collection (profile_edits)
+        await FirebaseFirestore.instance
+            .collection('blind')
+            .doc(user.uid)
+            .collection('profile_edits')
+            .add({
+          'updated_name': name,
+          'updated_email': email,
+          'action': 'Profile Update Initiated',
+          'timestamp': FieldValue.serverTimestamp(),
+        });
+
+        // 3. Update Firestore Main Document
+        await FirebaseFirestore.instance
+            .collection('blind')
+            .doc(user.uid)
+            .update({
+          'username': name,
+          'email': email,
+        });
+
+        // 4. Update Local SharedPreferences
+        final prefs = await SharedPreferences.getInstance();
+        await prefs.setString('userName', name);
+        await prefs.setString('userEmail', email);
+
+        await flutterTts.speak("Profile details saved locally and on cloud.");
+
+        if (mounted) {
+          Navigator.pushReplacement(
+            context,
+            MaterialPageRoute(builder: (_) => const BlindDashboardScreen()),
+          );
+        }
+      }
+    } on FirebaseAuthException catch (e) {
+      print("❌ Auth Error: ${e.code}");
+      await flutterTts.speak("Authentication error occurred");
+    } catch (e) {
+      print("❌ Error: $e");
+      await flutterTts.speak("An error occurred while saving profile");
+    }
   }
 
   @override
@@ -235,7 +298,7 @@ class _EditProfileState extends State<EditProfile> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
-                    Center(
+                    const Center(
                       child: Text(
                         "Edit Profile",
                         style: TextStyle(
@@ -246,7 +309,7 @@ class _EditProfileState extends State<EditProfile> {
                       ),
                     ),
                     const SizedBox(height: 25),
-                    Text(
+                    const Text(
                       "Name",
                       style: TextStyle(
                         fontSize: 17,
@@ -258,24 +321,23 @@ class _EditProfileState extends State<EditProfile> {
                     TextField(
                       controller: _nameController,
                       focusNode: _nameFocus,
+                      style: const TextStyle(color: Colors.black87),
                       decoration: InputDecoration(
                         filled: true,
                         fillColor: Colors.white.withOpacity(0.25),
-                        contentPadding:
-                        const EdgeInsets.symmetric(horizontal: 15, vertical: 12),
+                        contentPadding: const EdgeInsets.symmetric(horizontal: 15, vertical: 12),
                         enabledBorder: OutlineInputBorder(
                           borderRadius: BorderRadius.circular(15),
                           borderSide: BorderSide.none,
                         ),
                         focusedBorder: OutlineInputBorder(
                           borderRadius: BorderRadius.circular(15),
-                          borderSide:
-                          BorderSide(color: Colors.purple, width: 2),
+                          borderSide: const BorderSide(color: Colors.purple, width: 2),
                         ),
                       ),
                     ),
                     const SizedBox(height: 20),
-                    Text(
+                    const Text(
                       "Email",
                       style: TextStyle(
                         fontSize: 17,
@@ -287,19 +349,18 @@ class _EditProfileState extends State<EditProfile> {
                     TextField(
                       controller: _emailController,
                       focusNode: _emailFocus,
+                      style: const TextStyle(color: Colors.black87),
                       decoration: InputDecoration(
                         filled: true,
                         fillColor: Colors.white.withOpacity(0.25),
-                        contentPadding:
-                        const EdgeInsets.symmetric(horizontal: 15, vertical: 12),
+                        contentPadding: const EdgeInsets.symmetric(horizontal: 15, vertical: 12),
                         enabledBorder: OutlineInputBorder(
                           borderRadius: BorderRadius.circular(15),
                           borderSide: BorderSide.none,
                         ),
                         focusedBorder: OutlineInputBorder(
                           borderRadius: BorderRadius.circular(15),
-                          borderSide:
-                          BorderSide(color: Colors.purple, width: 2),
+                          borderSide: const BorderSide(color: Colors.purple, width: 2),
                         ),
                       ),
                     ),
