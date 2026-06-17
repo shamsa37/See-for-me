@@ -353,7 +353,7 @@ class _CallVolunteerScreenState extends State<CallVolunteerScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Connecting to Volunteer'),
+        title: const Text('Connecting to Volunteer....'),
         centerTitle: true,
       ),
       body: Center(

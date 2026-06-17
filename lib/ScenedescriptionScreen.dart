@@ -264,7 +264,7 @@ class _ScenedescriptionScreenState extends State<ScenedescriptionScreen> {
         File file = File(image.path);
 
         if (!mounted) break;
-        setState(() => _description = "Processing...");
+        setState(() => _description = "Processing.....");
 
         // API Call
         print("🌐 Sending to API...");

@@ -95,7 +95,7 @@ class SessionService {
     });
   }
 
-  // ================= ADD ICE CANDIDATE =================
+  // ================= ADD ICE CANDIDATE ===================
   Future<void> addCandidate(
       String sessionId,
       String role, // callerCandidates / calleeCandidates

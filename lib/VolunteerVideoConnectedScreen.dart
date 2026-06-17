@@ -395,7 +395,7 @@ class _VolunteerVideoConnectedScreenState
   // ================= FIXED EMPTY FUNCTION =================
   void _listenConnectionRecovery() {
     // safe placeholder (prevents crash)
-    print("Connection recovery enabled");
+    print("Connection recovery enabled..");
   }
 
   // ================= END CALL =================

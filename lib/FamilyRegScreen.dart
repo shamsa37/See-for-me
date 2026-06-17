@@ -360,7 +360,7 @@ class _FamilyRegScreenState extends State<FamilyRegScreen> {
     }
 
     try {
-      // ✅ Firebase Authentication
+      // ✅ Firebase Authentication..
       UserCredential userCredential =
       await FirebaseAuth.instance.createUserWithEmailAndPassword(
         email: emailController.text.trim(),

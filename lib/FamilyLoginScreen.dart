@@ -465,7 +465,7 @@ class _FamilyLoginScreenState extends State<FamilyLoginScreen> {
       await FirebaseAuth.instance
           .signInWithEmailAndPassword(email: email, password: password);
 
-      // ✅ Direct navigation
+      // ✅ Direct navigation..
       if (!mounted) return;
       Navigator.pushReplacement(
         context,

@@ -46,7 +46,7 @@ class FirestoreService {
     return requestRef.id;
   }
 
-  // ================= ACCEPT REQUEST =================
+  // ================= ACCEPT REQUEST ===================
   Future<void> acceptRequest(
       String requestId,
       String sessionId,

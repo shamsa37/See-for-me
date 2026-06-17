@@ -335,7 +335,7 @@ class _VolunteerRegScreenState extends State<VolunteerRegScreen>
           password: password.trim(),
         );
 
-        // ✅ FIRESTORE COLLECTION: volunteer
+        // ✅ FIRESTORE COLLECTION: volunteer..
         await FirebaseFirestore.instance
             .collection('volunteer')
             .doc(userCredential.user!.uid)
