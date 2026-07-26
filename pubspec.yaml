@@ -56,7 +56,6 @@ dependencies:
   firebase_core: ^4.7.0   # latest version
   firebase_auth: ^6.2.0    # agar authentication chahiye
   package_info_plus: ^9.0.0
-<<<<<<< HEAD
   google_sign_in: ^6.2.1
   #google_mlkit_vision: ^0.15.0
   google_mlkit_commons: any
@@ -73,11 +72,6 @@ dependencies:
 
 
 
-=======
-
-
-
->>>>>>> f4f6bf45ce2208706432981ce4d31e348e5874d2
 dev_dependencies:
   flutter_launcher_icons: ^0.14.4
 

@@ -5,10 +5,9 @@ import 'package:flutter_tts/flutter_tts.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 
-// Dashboard screen ka placeholder (Isay apne dashboard file se link karein)
-// import 'package:your_app/blind_dashboard.dart';
-
 class RegistrationScreen extends StatefulWidget {
+  const RegistrationScreen({super.key});
+
   @override
   State<RegistrationScreen> createState() => _RegistrationScreenState();
 }
@@ -80,23 +79,29 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
       );
 
       if (userCredential.user != null) {
-        // Firestore Data Save
+        // ✅ FIXED: Now saving 'name' to perfectly match FamilyDashboard expectations
         await FirebaseFirestore.instance.collection('blind').doc(userCredential.user!.uid).set({
-          'username': usernameController.text.trim(),
+          'name': usernameController.text.trim(), // Family side updates to 'name'
+          'username': usernameController.text.trim(), // Kept for safety/backward compatibility
           'email': cleanEmail,
           'phone': phoneController.text.trim(),
           'gender': isMale ? 'male' : 'female',
           'uid': userCredential.user!.uid,
           'createdAt': FieldValue.serverTimestamp(),
+          // ✅ FIXED: Initializing placeholder map so dashboard never encounters full reference error
+          'live_location': {
+            'latitude': 0.0,
+            'longitude': 0.0,
+            'last_updated': FieldValue.serverTimestamp(),
+          }
         });
 
         await _tts.speak("Registration successful. Navigating to dashboard.");
 
-        // ---------------- NAVIGATION ----------------
         if (mounted) {
           Navigator.pushReplacement(
             context,
-            MaterialPageRoute(builder: (context) => const BlindDashboard()), // Apni class ka sahi naam likhein
+            MaterialPageRoute(builder: (context) => const BlindDashboard()),
           );
         }
       }
@@ -252,7 +257,6 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
   }
 }
 
-// Dummy Dashboard Class (Agar aapke paas already hai to isay delete kar dein)
 class BlindDashboard extends StatelessWidget {
   const BlindDashboard({super.key});
   @override

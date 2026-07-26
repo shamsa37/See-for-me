@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'ForgetPasswordScreen.dart';
 
 class ChangePasswordScreen extends StatefulWidget {
@@ -20,6 +21,7 @@ class _ChangePasswordScreenState extends State<ChangePasswordScreen>
   bool _obscureCurrent = true;
   bool _obscureNew = true;
   bool _obscureConfirm = true;
+  bool _isLoading = false; // 👈 Loading state add ki hai
 
   late AnimationController _controller;
   late Animation<double> _fadeAnimation;
@@ -42,6 +44,74 @@ class _ChangePasswordScreenState extends State<ChangePasswordScreen>
     );
 
     _controller.forward();
+  }
+
+  // 🔥 FIREBASE PASSWORD CHANGE LOGIC
+  Future<void> _changePassword() async {
+    if (!_formKey.currentState!.validate()) return;
+
+    setState(() => _isLoading = true);
+
+    try {
+      User? user = FirebaseAuth.instance.currentUser;
+
+      if (user != null && user.email != null) {
+        // 1️⃣ Step 1: Re-authenticate user with current password
+        AuthCredential credential = EmailAuthProvider.credential(
+          email: user.email!,
+          password: currentPasswordController.text.trim(),
+        );
+
+        await user.reauthenticateWithCredential(credential);
+
+        // 2️⃣ Step 2: Update to new password
+        await user.updatePassword(newPasswordController.text.trim());
+
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text("Password changed successfully!"),
+              backgroundColor: Colors.teal,
+            ),
+          );
+          Navigator.pop(context); // Screen close kar do success par
+        }
+      } else {
+        throw FirebaseAuthException(
+          code: 'no-user',
+          message: 'No logged in user found.',
+        );
+      }
+    } on FirebaseAuthException catch (e) {
+      String errorMessage = "Failed to update password.";
+      if (e.code == 'wrong-password' || e.code == 'invalid-credential') {
+        errorMessage = "Incorrect current password.";
+      } else if (e.code == 'weak-password') {
+        errorMessage = "The new password is too weak.";
+      } else if (e.code == 'requires-recent-login') {
+        errorMessage = "Please log in again before changing password.";
+      }
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(errorMessage),
+            backgroundColor: Colors.redAccent,
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text("An error occurred: $e"),
+            backgroundColor: Colors.redAccent,
+          ),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _isLoading = false);
+    }
   }
 
   @override
@@ -71,6 +141,7 @@ class _ChangePasswordScreenState extends State<ChangePasswordScreen>
         centerTitle: true,
       ),
       body: Container(
+        height: double.infinity,
         decoration: const BoxDecoration(
           gradient: LinearGradient(
             colors: [Colors.black, Color(0xFF6A1B9A)],
@@ -138,17 +209,20 @@ class _ChangePasswordScreenState extends State<ChangePasswordScreen>
                           borderRadius: BorderRadius.circular(12),
                         ),
                       ),
-                      onPressed: () {
-                        if (_formKey.currentState!.validate()) {
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            const SnackBar(
-                                content: Text("Password changed successfully")),
-                          );
-                        }
-                      },
-                      child: const Text(
+                      onPressed: _isLoading ? null : _changePassword,
+                      child: _isLoading
+                          ? const SizedBox(
+                        height: 20,
+                        width: 20,
+                        child: CircularProgressIndicator(
+                          color: Colors.white,
+                          strokeWidth: 2,
+                        ),
+                      )
+                          : const Text(
                         "Change Password",
-                        style: TextStyle(fontSize: 16, color: Colors.white),
+                        style:
+                        TextStyle(fontSize: 16, color: Colors.white),
                       ),
                     ),
                     const SizedBox(height: 16),
@@ -157,7 +231,8 @@ class _ChangePasswordScreenState extends State<ChangePasswordScreen>
                         Navigator.push(
                           context,
                           MaterialPageRoute(
-                              builder: (context) => const ForgetPasswordScreen()),
+                              builder: (context) =>
+                              const ForgetPasswordScreen()),
                         );
                       },
                       child: const Text(
@@ -189,11 +264,13 @@ class _ChangePasswordScreenState extends State<ChangePasswordScreen>
       decoration: InputDecoration(
         labelText: label,
         labelStyle: const TextStyle(color: Colors.white70),
-        enabledBorder: const OutlineInputBorder(
-          borderSide: BorderSide(color: Colors.white38),
+        enabledBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(12),
+          borderSide: const BorderSide(color: Colors.white38),
         ),
-        focusedBorder: const OutlineInputBorder(
-          borderSide: BorderSide(color: Colors.white),
+        focusedBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(12),
+          borderSide: const BorderSide(color: Colors.white),
         ),
         suffixIcon: IconButton(
           icon: Icon(
@@ -203,7 +280,8 @@ class _ChangePasswordScreenState extends State<ChangePasswordScreen>
           onPressed: toggle,
         ),
       ),
-      validator: validator ?? (value) => value == null || value.isEmpty ? "Enter $label" : null,
+      validator: validator ??
+              (value) => value == null || value.isEmpty ? "Enter $label" : null,
     );
   }
 }

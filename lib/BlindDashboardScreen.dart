@@ -2,10 +2,13 @@
 // import 'package:flutter/material.dart';
 // import 'package:flutter_tts/flutter_tts.dart';
 // import 'package:speech_to_text/speech_to_text.dart' as stt;
+// import 'package:project/CustomAppBar.dart';
 // import 'package:cloud_firestore/cloud_firestore.dart';
 // import 'package:firebase_auth/firebase_auth.dart';
+// import 'BlindLocationEngine.dart';
+// import 'package:project/services/firestore_service.dart';
+// import 'CallVolunteerScreen.dart';
 //
-// // Note: CustomAppBar aur Dashboard class ka naam aapki file ke mutabiq hai
 // class BlindDashboardScreen extends StatefulWidget {
 //   const BlindDashboardScreen({Key? key}) : super(key: key);
 //
@@ -18,10 +21,14 @@
 //   final FlutterTts flutterTts = FlutterTts();
 //   late stt.SpeechToText _speech;
 //   bool isListening = false;
+//   final FirestoreService _firestoreService = FirestoreService();
 //
 //   @override
 //   void initState() {
 //     super.initState();
+//
+//     // Background location tracking activation
+//     BlindLocationEngine().startLocationTracking();
 //     WidgetsBinding.instance.addObserver(this);
 //     _speech = stt.SpeechToText();
 //
@@ -40,12 +47,14 @@
 //
 //   String? get currentUid => FirebaseAuth.instance.currentUser?.uid;
 //
+//   // ================= VOICE LOGIC =================
+//
 //   Future<void> _startDashboardVoiceGuide() async {
 //     await flutterTts.stop();
 //     _speech.stop();
 //
 //     await _speak(
-//       "Dashboard opened. Say Call Volunteer, Scene Description, SOS, Offline Help, or Edit Profile.",
+//       "Dashboard opened. Say Call Volunteer, Scene Description, SOS, or Edit Profile.",
 //       onComplete: _startListening,
 //     );
 //   }
@@ -84,7 +93,6 @@
 //     if (command.contains("call volunteer")) {
 //       await _speak("Calling volunteer");
 //       await _firestoreCall();
-//       _navigate('/callVolunteer');
 //     } else if (command.contains("scene")) {
 //       await _speak("Opening scene description");
 //       await _firestoreAI();
@@ -93,13 +101,9 @@
 //       await _speak("SOS activated");
 //       await _firestoreSOS();
 //       _navigate('/sos');
-//     } else if (command.contains("offline")) {
-//       await _speak("Opening offline help");
-//       await _firestoreOffline();
-//       _navigate('/offline');
 //     } else if (command.contains("edit profile")) {
 //       await _speak("Opening edit profile");
-//       await _firestoreEditProfile(); // Sub-collection for profile edit
+//       await _firestoreEditProfile();
 //       _navigate('/editprofile');
 //     } else {
 //       _speak("Sorry, I didn't understand.", onComplete: _startListening);
@@ -112,69 +116,57 @@
 //     }
 //   }
 //
-//   // ================= FIRESTORE SUB-COLLECTIONS =================
+//   // ================= FIRESTORE SUB-COLLECTIONS & NAVIGATION =================
 //
 //   Future<void> _firestoreCall() async {
 //     if (currentUid == null) return;
+//
 //     try {
-//       final ref = FirebaseFirestore.instance.collection('blind').doc(currentUid);
-//       await ref.collection('call').add({
-//         'type': 'Voice Command Call',
-//         'status': 'pending',
-//         'timestamp': FieldValue.serverTimestamp(),
-//       });
-//     } catch (e) { print("Error: $e"); }
+//       if (mounted) {
+//         Navigator.push(
+//           context,
+//           MaterialPageRoute(
+//             builder: (context) => const CallVolunteerScreen(),
+//           ),
+//         ).then((_) => _startDashboardVoiceGuide());
+//       }
+//     } catch (e) {
+//       print('Firestore Error: $e');
+//       await _speak("Failed to initiate call. Please try again.");
+//     }
 //   }
 //
 //   Future<void> _firestoreSOS() async {
 //     if (currentUid == null) return;
 //     try {
-//       await FirebaseFirestore.instance
-//           .collection('blind').doc(currentUid)
-//           .collection('sos').add({
+//       await FirebaseFirestore.instance.collection('blind').doc(currentUid).collection('sos').add({
 //         'action': 'SOS Triggered',
 //         'timestamp': FieldValue.serverTimestamp(),
 //       });
-//     } catch (e) { print("Error: $e"); }
+//     } catch (e) { print(e); }
 //   }
 //
 //   Future<void> _firestoreAI() async {
 //     if (currentUid == null) return;
 //     try {
-//       await FirebaseFirestore.instance
-//           .collection('blind').doc(currentUid)
-//           .collection('ai_scene').add({
+//       await FirebaseFirestore.instance.collection('blind').doc(currentUid).collection('ai_scene').add({
 //         'action': 'Scene Scan Started',
 //         'timestamp': FieldValue.serverTimestamp(),
 //       });
-//     } catch (e) { print("Error: $e"); }
-//   }
-//
-//   Future<void> _firestoreOffline() async {
-//     if (currentUid == null) return;
-//     try {
-//       await FirebaseFirestore.instance
-//           .collection('blind').doc(currentUid)
-//           .collection('offline_help').add({
-//         'action': 'Accessed Offline Support',
-//         'timestamp': FieldValue.serverTimestamp(),
-//       });
-//     } catch (e) { print("Error: $e"); }
+//     } catch (e) { print(e); }
 //   }
 //
 //   Future<void> _firestoreEditProfile() async {
 //     if (currentUid == null) return;
 //     try {
-//       await FirebaseFirestore.instance
-//           .collection('blind').doc(currentUid)
-//           .collection('profile_edits').add({
+//       await FirebaseFirestore.instance.collection('blind').doc(currentUid).collection('profile_edits').add({
 //         'action': 'Profile Edit Accessed',
 //         'timestamp': FieldValue.serverTimestamp(),
 //       });
-//     } catch (e) { print("Error: $e"); }
+//     } catch (e) { print(e); }
 //   }
 //
-//   // ================= UI BUTTONS =================
+//   // ================= UI COMPONENTS =================
 //
 //   Widget buildButton({
 //     required String label,
@@ -183,10 +175,15 @@
 //     required VoidCallback onPressed,
 //   }) {
 //     return InkWell(
+//       borderRadius: BorderRadius.circular(20),
 //       onTap: onPressed,
 //       child: Container(
 //         decoration: BoxDecoration(
-//           gradient: LinearGradient(colors: colors),
+//           gradient: LinearGradient(
+//             colors: colors,
+//             begin: Alignment.topLeft,
+//             end: Alignment.bottomRight,
+//           ),
 //           borderRadius: BorderRadius.circular(20),
 //         ),
 //         child: Column(
@@ -194,7 +191,15 @@
 //           children: [
 //             Icon(icon, size: 40, color: Colors.white),
 //             const SizedBox(height: 10),
-//             Text(label, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+//             Text(
+//               label,
+//               textAlign: TextAlign.center,
+//               style: const TextStyle(
+//                 color: Colors.white,
+//                 fontSize: 16,
+//                 fontWeight: FontWeight.bold,
+//               ),
+//             ),
 //           ],
 //         ),
 //       ),
@@ -204,6 +209,7 @@
 //   @override
 //   Widget build(BuildContext context) {
 //     return Scaffold(
+//       appBar: const CustomAppBar(title: "Blind Dashboard"),
 //       backgroundColor: const Color(0xFFF3E5F5),
 //       body: Padding(
 //         padding: const EdgeInsets.all(16),
@@ -216,31 +222,36 @@
 //               label: "Call Volunteer",
 //               icon: Icons.videocam,
 //               colors: [Colors.lightBlueAccent, Colors.blue],
-//               onPressed: () async { await _firestoreCall(); _navigate('/callVolunteer'); },
+//               onPressed: () async {
+//                 await _firestoreCall();
+//               },
 //             ),
 //             buildButton(
 //               label: "Scene Description",
 //               icon: Icons.remove_red_eye_outlined,
 //               colors: [Colors.cyanAccent, Colors.teal],
-//               onPressed: () async { await _firestoreAI(); _navigate('/scene'); },
+//               onPressed: () async {
+//                 await _firestoreAI();
+//                 _navigate('/scene');
+//               },
 //             ),
 //             buildButton(
 //               label: "SOS",
 //               icon: Icons.notification_important_outlined,
 //               colors: [Colors.redAccent, Colors.deepOrange],
-//               onPressed: () async { await _firestoreSOS(); _navigate('/sos'); },
-//             ),
-//             buildButton(
-//               label: "Offline Help",
-//               icon: Icons.help_outline,
-//               colors: [Colors.indigoAccent, Colors.blue],
-//               onPressed: () async { await _firestoreOffline(); _navigate('/offline'); },
+//               onPressed: () async {
+//                 await _firestoreSOS();
+//                 _navigate('/sos');
+//               },
 //             ),
 //             buildButton(
 //               label: "Edit Profile",
 //               icon: Icons.person_outline,
 //               colors: [Colors.deepPurpleAccent, Colors.purple],
-//               onPressed: () async { await _firestoreEditProfile(); _navigate('/editprofile'); },
+//               onPressed: () async {
+//                 await _firestoreEditProfile();
+//                 _navigate('/editprofile');
+//               },
 //             ),
 //           ],
 //         ),
@@ -248,15 +259,19 @@
 //     );
 //   }
 // }
+//
+//
 
 
 import 'package:flutter/material.dart';
 import 'package:flutter_tts/flutter_tts.dart';
 import 'package:speech_to_text/speech_to_text.dart' as stt;
-import 'package:project/CustomAppBar.dart'; // Aapki original bar
+import 'package:project/CustomAppBar.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-
+import 'BlindLocationEngine.dart';
+import 'package:project/services/firestore_service.dart';
+import 'CallVolunteerScreen.dart';
 
 class BlindDashboardScreen extends StatefulWidget {
   const BlindDashboardScreen({Key? key}) : super(key: key);
@@ -270,10 +285,14 @@ class _BlindDashboardScreenState extends State<BlindDashboardScreen>
   final FlutterTts flutterTts = FlutterTts();
   late stt.SpeechToText _speech;
   bool isListening = false;
+  final FirestoreService _firestoreService = FirestoreService();
 
   @override
   void initState() {
     super.initState();
+
+    // Background location tracking activation
+    BlindLocationEngine().startLocationTracking();
     WidgetsBinding.instance.addObserver(this);
     _speech = stt.SpeechToText();
 
@@ -299,7 +318,7 @@ class _BlindDashboardScreenState extends State<BlindDashboardScreen>
     _speech.stop();
 
     await _speak(
-      "Dashboard opened. Say Call Volunteer, Scene Description, SOS, Offline Help, or Edit Profile.",
+      "Dashboard opened. Say Call Volunteer, Scene Description, SOS, or Edit Profile.",
       onComplete: _startListening,
     );
   }
@@ -338,7 +357,6 @@ class _BlindDashboardScreenState extends State<BlindDashboardScreen>
     if (command.contains("call volunteer")) {
       await _speak("Calling volunteer");
       await _firestoreCall();
-      _navigate('/callVolunteer');
     } else if (command.contains("scene")) {
       await _speak("Opening scene description");
       await _firestoreAI();
@@ -347,10 +365,6 @@ class _BlindDashboardScreenState extends State<BlindDashboardScreen>
       await _speak("SOS activated");
       await _firestoreSOS();
       _navigate('/sos');
-    } else if (command.contains("offline")) {
-      await _speak("Opening offline help");
-      await _firestoreOffline();
-      _navigate('/offline');
     } else if (command.contains("edit profile")) {
       await _speak("Opening edit profile");
       await _firestoreEditProfile();
@@ -366,34 +380,23 @@ class _BlindDashboardScreenState extends State<BlindDashboardScreen>
     }
   }
 
-  // ================= FIRESTORE SUB-COLLECTIONS =================
+  // ================= FIRESTORE LOGS =================
 
-  // Future<void> _firestoreCall() async {
-  //   if (currentUid == null) return;
-  //   try {
-  //     await FirebaseFirestore.instance.collection('blind').doc(currentUid).collection('call').add({
-  //       'action': 'Voice Command Call',
-  //       'status': 'pending',
-  //       'timestamp': FieldValue.serverTimestamp(),
-  //     });
-  //   } catch (e) { print(e); }
-  // }
   Future<void> _firestoreCall() async {
     if (currentUid == null) return;
 
     try {
-      await FirebaseFirestore.instance
-          .collection('blind')
-          .doc(currentUid)
-          .collection('call')
-          .add({
-        'action': 'Voice Command Call',
-        'status': 'pending',
-        'timestamp': FieldValue.serverTimestamp(),
-      });
-
+      if (mounted) {
+        Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (context) => const CallVolunteerScreen(),
+          ),
+        ).then((_) => _startDashboardVoiceGuide());
+      }
     } catch (e) {
-      print(e);
+      debugPrint('Firestore Error: $e');
+      await _speak("Failed to initiate call. Please try again.");
     }
   }
 
@@ -404,7 +407,7 @@ class _BlindDashboardScreenState extends State<BlindDashboardScreen>
         'action': 'SOS Triggered',
         'timestamp': FieldValue.serverTimestamp(),
       });
-    } catch (e) { print(e); }
+    } catch (e) { debugPrint("$e"); }
   }
 
   Future<void> _firestoreAI() async {
@@ -414,17 +417,7 @@ class _BlindDashboardScreenState extends State<BlindDashboardScreen>
         'action': 'Scene Scan Started',
         'timestamp': FieldValue.serverTimestamp(),
       });
-    } catch (e) { print(e); }
-  }
-
-  Future<void> _firestoreOffline() async {
-    if (currentUid == null) return;
-    try {
-      await FirebaseFirestore.instance.collection('blind').doc(currentUid).collection('offline_emergency_logs').add({
-        'action': 'Accessed Offline Support',
-        'timestamp': FieldValue.serverTimestamp(),
-      });
-    } catch (e) { print(e); }
+    } catch (e) { debugPrint("$e"); }
   }
 
   Future<void> _firestoreEditProfile() async {
@@ -434,10 +427,130 @@ class _BlindDashboardScreenState extends State<BlindDashboardScreen>
         'action': 'Profile Edit Accessed',
         'timestamp': FieldValue.serverTimestamp(),
       });
-    } catch (e) { print(e); }
+    } catch (e) { debugPrint("$e"); }
   }
 
-  // ================= UI COMPONENTS (UNCHANGED) =================
+  // ================= PROFESSIONAL UI COMPONENTS =================
+
+  Widget buildHeaderBanner() {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        gradient: const LinearGradient(
+          colors: [Color(0xFF4A148C), Color(0xFF7B1FA2)],
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+        ),
+        borderRadius: BorderRadius.circular(24),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.purple.withOpacity(0.3),
+            blurRadius: 12,
+            offset: const Offset(0, 6),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              const Text(
+                "Welcome Back 👋",
+                style: TextStyle(
+                  color: Colors.white,
+                  fontSize: 22,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                decoration: BoxDecoration(
+                  color: Colors.greenAccent.withOpacity(0.2),
+                  borderRadius: BorderRadius.circular(20),
+                  border: Border.all(color: Colors.greenAccent),
+                ),
+                child: const Row(
+                  children: [
+                    Icon(Icons.circle, color: Colors.greenAccent, size: 8),
+                    SizedBox(width: 6),
+                    Text(
+                      "Live Assistant",
+                      style: TextStyle(color: Colors.greenAccent, fontSize: 11, fontWeight: FontWeight.bold),
+                    ),
+                  ],
+                ),
+              )
+            ],
+          ),
+          const SizedBox(height: 8),
+          const Text(
+            "Tap any feature below or speak a command directly.",
+            style: TextStyle(color: Colors.white70, fontSize: 13),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget buildVoiceStatusCard() {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: Colors.purple.shade100),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.04),
+            blurRadius: 10,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: Row(
+        children: [
+          CircleAvatar(
+            backgroundColor: isListening ? Colors.redAccent.shade100 : Colors.purple.shade100,
+            radius: 22,
+            child: Icon(
+              isListening ? Icons.mic : Icons.mic_none,
+              color: isListening ? Colors.red.shade800 : Colors.purple.shade800, // FIXED HERE
+              size: 24,
+            ),
+          ),
+          const SizedBox(width: 14),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  isListening ? "Listening for commands..." : "Voice Assistant Active",
+                  style: const TextStyle(
+                    fontWeight: FontWeight.bold,
+                    fontSize: 14,
+                    color: Color(0xFF2A0845),
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  isListening ? "Speak clearly into your mic" : "Say 'Call Volunteer', 'SOS', etc.",
+                  style: const TextStyle(color: Colors.black54, fontSize: 12),
+                ),
+              ],
+            ),
+          ),
+          IconButton(
+            icon: const Icon(Icons.volume_up_rounded, color: Colors.purple),
+            onPressed: () => _startDashboardVoiceGuide(),
+          ),
+        ],
+      ),
+    );
+  }
 
   Widget buildButton({
     required String label,
@@ -445,33 +558,59 @@ class _BlindDashboardScreenState extends State<BlindDashboardScreen>
     required List<Color> colors,
     required VoidCallback onPressed,
   }) {
-    return InkWell(
-      borderRadius: BorderRadius.circular(20),
-      onTap: onPressed,
-      child: Container(
-        decoration: BoxDecoration(
-          gradient: LinearGradient(
-            colors: colors,
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
+    return Container(
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(22),
+        boxShadow: [
+          BoxShadow(
+            color: colors.last.withOpacity(0.35),
+            blurRadius: 10,
+            offset: const Offset(0, 5),
           ),
-          borderRadius: BorderRadius.circular(20),
-        ),
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(icon, size: 40, color: Colors.white),
-            const SizedBox(height: 10),
-            Text(
-              label,
-              textAlign: TextAlign.center,
-              style: const TextStyle(
-                color: Colors.white,
-                fontSize: 16,
-                fontWeight: FontWeight.bold,
+        ],
+      ),
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          borderRadius: BorderRadius.circular(22),
+          onTap: onPressed,
+          child: Ink(
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                colors: colors,
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+              ),
+              borderRadius: BorderRadius.circular(22),
+            ),
+            child: Padding(
+              padding: const EdgeInsets.all(16.0),
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: Colors.white.withOpacity(0.2),
+                      shape: BoxShape.circle,
+                    ),
+                    child: Icon(icon, size: 36, color: Colors.white),
+                  ),
+                  const SizedBox(height: 12),
+                  Text(
+                    label,
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 15,
+                      fontWeight: FontWeight.bold,
+                      letterSpacing: 0.3,
+                    ),
+                  ),
+                ],
               ),
             ),
-          ],
+          ),
         ),
       ),
     );
@@ -480,61 +619,86 @@ class _BlindDashboardScreenState extends State<BlindDashboardScreen>
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: const CustomAppBar(title: "Blind Dashboard"), // Top Bar Wapas Add Kar Di
-      backgroundColor: const Color(0xFFF3E5F5),
-      body: Padding(
-        padding: const EdgeInsets.all(16),
-        child: GridView.count(
-          crossAxisCount: 2,
-          crossAxisSpacing: 16,
-          mainAxisSpacing: 16,
-          children: [
-            buildButton(
-              label: "Call Volunteer",
-              icon: Icons.videocam,
-              colors: [Colors.lightBlueAccent, Colors.blue],
-              onPressed: () async {
-                await _firestoreCall();
-                _navigate('/callVolunteer');
-              },
-            ),
-            buildButton(
-              label: "Scene Description",
-              icon: Icons.remove_red_eye_outlined,
-              colors: [Colors.cyanAccent, Colors.teal],
-              onPressed: () async {
-                await _firestoreAI();
-                _navigate('/scene');
-              },
-            ),
-            buildButton(
-              label: "SOS",
-              icon: Icons.notification_important_outlined,
-              colors: [Colors.redAccent, Colors.deepOrange],
-              onPressed: () async {
-                await _firestoreSOS();
-                _navigate('/sos');
-              },
-            ),
-            buildButton(
-              label: "Offline Help",
-              icon: Icons.help_outline,
-              colors: [Colors.indigoAccent, Colors.blue],
-              onPressed: () async {
-                await _firestoreOffline();
-                _navigate('/offline');
-              },
-            ),
-            buildButton(
-              label: "Edit Profile",
-              icon: Icons.person_outline,
-              colors: [Colors.deepPurpleAccent, Colors.purple],
-              onPressed: () async {
-                await _firestoreEditProfile();
-                _navigate('/editprofile');
-              },
-            ),
-          ],
+      appBar: const CustomAppBar(title: "Blind Dashboard"),
+      backgroundColor: const Color(0xFFF6F4F9),
+      body: SafeArea(
+        child: SingleChildScrollView(
+          physics: const BouncingScrollPhysics(),
+          padding: const EdgeInsets.all(18),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // Top Banner
+              buildHeaderBanner(),
+
+              const SizedBox(height: 20),
+
+              // Grid Section
+              const Text(
+                "Quick Actions",
+                style: TextStyle(
+                  fontSize: 18,
+                  fontWeight: FontWeight.bold,
+                  color: Color(0xFF330066),
+                ),
+              ),
+
+              const SizedBox(height: 12),
+
+              GridView.count(
+                shrinkWrap: true,
+                physics: const NeverScrollableScrollPhysics(),
+                crossAxisCount: 2,
+                crossAxisSpacing: 16,
+                mainAxisSpacing: 16,
+                childAspectRatio: 1.15,
+                children: [
+                  buildButton(
+                    label: "Call Volunteer",
+                    icon: Icons.videocam_rounded,
+                    colors: [const Color(0xFF00B4DB), const Color(0xFF0083B0)],
+                    onPressed: () async {
+                      await _firestoreCall();
+                    },
+                  ),
+                  buildButton(
+                    label: "Scene AI",
+                    icon: Icons.remove_red_eye_rounded,
+                    colors: [const Color(0xFF11998E), const Color(0xFF38EF7D)],
+                    onPressed: () async {
+                      await _firestoreAI();
+                      _navigate('/scene');
+                    },
+                  ),
+                  buildButton(
+                    label: "SOS Alert",
+                    icon: Icons.warning_amber_rounded,
+                    colors: [const Color(0xFFFF416C), const Color(0xFFFF4B2B)],
+                    onPressed: () async {
+                      await _firestoreSOS();
+                      _navigate('/sos');
+                    },
+                  ),
+                  buildButton(
+                    label: "Edit Profile",
+                    icon: Icons.person_rounded,
+                    colors: [const Color(0xFF8E2DE2), const Color(0xFF4A00E0)],
+                    onPressed: () async {
+                      await _firestoreEditProfile();
+                      _navigate('/editprofile');
+                    },
+                  ),
+                ],
+              ),
+
+              const SizedBox(height: 24),
+
+              // Bottom Voice Status Indicator (Fills bottom white space)
+              buildVoiceStatusCard(),
+
+              const SizedBox(height: 10),
+            ],
+          ),
         ),
       ),
     );

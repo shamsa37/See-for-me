@@ -72,10 +72,12 @@
 
 import 'dart:async';
 import 'package:flutter/material.dart';
+import 'CallScreen.dart';
 import 'package:flutter_tts/flutter_tts.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter_webrtc/flutter_webrtc.dart';
+import 'package:geolocator/geolocator.dart';
 
 class CallVolunteerScreen extends StatefulWidget {
   const CallVolunteerScreen({super.key});
@@ -89,6 +91,7 @@ class _CallVolunteerScreenState extends State<CallVolunteerScreen> {
 
   String _status = "requesting";
   bool _showAlternativeOptions = false;
+  int _waitingTime = 0;
 
   String? _sessionId;
   String? _requestId;
@@ -96,259 +99,440 @@ class _CallVolunteerScreenState extends State<CallVolunteerScreen> {
 
   StreamSubscription? _requestSub;
   StreamSubscription? _sessionSub;
+  StreamSubscription? _answerSub;
+  StreamSubscription? _iceSub;
+  Timer? _waitingTimer;
 
   RTCPeerConnection? _peerConnection;
   MediaStream? _localStream;
+  RTCVideoRenderer? _localRenderer;
+
+  bool _remoteDescriptionSet = false;
+  bool _signalingStarted = false;
+
+  String? get currentUid => FirebaseAuth.instance.currentUser?.uid;
 
   @override
   void initState() {
     super.initState();
-    _createSessionAndStart();
+    _createRequestAndListen();
+    _startWaitingTimer();
   }
 
-  // ================= START =================
-  Future<void> _createSessionAndStart() async {
+  // ================= CREATE REQUEST & LISTEN =================
+  Future<void> _createRequestAndListen() async {
     try {
-      String userId =
-          FirebaseAuth.instance.currentUser?.uid ?? 'blind_user';
+      String userId = currentUid ?? 'blind_user';
 
-      // 1️⃣ CREATE REQUEST
+      // Get location
+      Position? location;
+      try {
+        location = await Geolocator.getCurrentPosition(
+          desiredAccuracy: LocationAccuracy.high,
+          timeLimit: const Duration(seconds: 5),
+        );
+      } catch (e) {
+        print('Location error: $e');
+      }
+
+      // Create request in global collection
       DocumentReference requestDoc =
       await FirebaseFirestore.instance.collection('requests').add({
         'userId': userId,
         'type': 'help',
         'status': 'pending',
-        'timeStamp': FieldValue.serverTimestamp(),
+        'priority': 'normal',
+        'location': {
+          'latitude': location?.latitude ?? 0.0,
+          'longitude': location?.longitude ?? 0.0,
+        },
+        'timestamp': FieldValue.serverTimestamp(),
       });
 
       _requestId = requestDoc.id;
-      await _initWebRTC();
+      print('✅ Request created: $_requestId');
+
+      // Also log in user's subcollection
+      await FirebaseFirestore.instance
+          .collection('blind')
+          .doc(userId)
+          .collection('call')
+          .add({
+        'requestId': _requestId,
+        'status': 'pending',
+        'timestamp': FieldValue.serverTimestamp(),
+      });
+
+      setState(() => _status = 'waiting for volunteer');
+      await _tts.speak("Searching for volunteer....");
+
       _listenForVolunteerAccept();
-
-      await _tts.speak("Searching for volunteer...");
-
     } catch (e) {
-      _showError("Error: $e");
+      print('❌ Request creation error: $e');
+      _showError("Error creating request: $e");
     }
   }
 
-  // ================= VOLUNTEER ACCEPT =================
+  // ================= LISTEN FOR VOLUNTEER ACCEPT =================
   void _listenForVolunteerAccept() {
     _requestSub = FirebaseFirestore.instance
         .collection('requests')
         .doc(_requestId)
         .snapshots()
-        .listen((snapshot) async {
-      if (!snapshot.exists) return;
+        .listen(
+          (snapshot) async {
+        if (!snapshot.exists) return;
 
-      final data = snapshot.data() as Map<String, dynamic>;
+        final data = snapshot.data() as Map<String, dynamic>;
 
-      setState(() {
-        _status = data['status'] ?? "pending";
-      });
+        setState(() => _status = data['status'] ?? 'pending');
 
-      if (data['status'] == 'accepted') {
-        _volunteerId = data['volunteerId'];
+        final incomingSessionId = data['sessionId'] as String?;
+        final incomingVolunteerId = data['volunteerId'] as String?;
 
-        await _tts.speak("Volunteer connected");
+        // Volunteer accepted and created session
+        if (data['status'] == 'accepted' &&
+            incomingSessionId != null &&
+            _sessionId == null) {
+          print('✅ Volunteer accepted! Session: $incomingSessionId');
 
-        await _createSession();
-      }
-    });
+          _volunteerId = incomingVolunteerId;
+          _sessionId = incomingSessionId;
+
+          _stopWaitingTimer();
+          setState(() => _status = 'connecting');
+
+          await _tts.speak("Volunteer connected. Starting video call");
+
+          // Start signaling on existing session
+          await _startSignaling();
+        }
+
+        // Call rejected
+        if (data['status'] == 'rejected') {
+          print('❌ Volunteer rejected');
+          await _tts.speak("Volunteer rejected the call");
+          setState(() => _showAlternativeOptions = true);
+        }
+      },
+      onError: (e) => print('❌ Request listener error: $e'),
+    );
   }
 
-  // ================= SESSION CREATE =================
-  Future<void> _createSession() async {
+  // ================= START SIGNALING =================
+  Future<void> _startSignaling() async {
+    if (_signalingStarted) return;
+    _signalingStarted = true;
+
     try {
-      String userId =
-          FirebaseAuth.instance.currentUser?.uid ?? 'blind_user';
-
-      DocumentReference sessionDoc =
-      await FirebaseFirestore.instance.collection('sessions').add({
-        'status': 'waiting',
-        'userId': userId,
-        'volunteerId': _volunteerId,
-        'createdAt': FieldValue.serverTimestamp(),
-      });
-
-      _sessionId = sessionDoc.id;
-
       await _initWebRTC();
       await _createOffer();
       _listenSession();
       _listenAnswer();
       _listenIceCandidates();
 
+      print('✅ Signaling started');
     } catch (e) {
-      _showError("Session error: $e");
+      print('❌ Signaling error: $e');
+      _showError("Connection error: $e");
     }
   }
 
-  // ================= WEBRTC INIT =================
+  // ================= WEBRTC INITIALIZATION =================
   Future<void> _initWebRTC() async {
-    final config = {
-      "iceServers": [
-        {"urls": "stun:stun.l.google.com:19302"},
-      ]
-    };
+    try {
+      final config = {
+        "iceServers": [
+          {"urls": ["stun:stun.l.google.com:19302"]},
+          {"urls": ["stun:stun1.l.google.com:19302"]},
+        ]
+      };
 
-    _peerConnection =
-    await createPeerConnection(config);
+      final mediaConstraints = {
+        'audio': true,
+        'video': {
+          'mandatory': {
+            'minWidth': '320',
+            'minHeight': '240',
+            'minFrameRate': '15',
+          },
+          'facingMode': 'user',
+          'optional': [],
+        }
+      };
 
-    _localStream =
-    await navigator.mediaDevices.getUserMedia({
-      'audio': true,
-      'video': true,
-    });
+      _peerConnection = await createPeerConnection(config, mediaConstraints);
 
-    _localStream!.getTracks().forEach((track) {
-      _peerConnection!.addTrack(track, _localStream!);
-    });
+      // Get local media stream
+      _localStream = await navigator.mediaDevices.getUserMedia(mediaConstraints);
 
-    // SEND ICE
-    _peerConnection!.onIceCandidate = (candidate) {
-      if (candidate == null || _sessionId == null) return;
+      // Add tracks to peer connection
+      _localStream!.getTracks().forEach((track) {
+        _peerConnection!.addTrack(track, _localStream!);
+      });
 
-      FirebaseFirestore.instance
+      print('✅ WebRTC initialized');
+
+      // Handle ICE candidates
+      _peerConnection!.onIceCandidate = (RTCIceCandidate candidate) {
+        if (candidate == null || _sessionId == null) return;
+
+        FirebaseFirestore.instance
+            .collection('sessions')
+            .doc(_sessionId)
+            .collection('callerCandidates')
+            .add({
+          'candidate': candidate.candidate,
+          'sdpMid': candidate.sdpMid,
+          'sdpMLineIndex': candidate.sdpMLineIndex,
+          'timestamp': FieldValue.serverTimestamp(),
+        }).catchError((e) => print('❌ ICE candidate add error: $e'));
+      };
+
+      // Handle remote stream
+      _peerConnection!.onTrack = (RTCTrackEvent event) {
+        print('🎥 Remote track received: ${event.track.kind}');
+      };
+
+      print('✅ Media stream acquired');
+    } catch (e) {
+      print('❌ WebRTC init error: $e');
+      throw Exception('Failed to initialize WebRTC: $e');
+    }
+  }
+
+  // ================= CREATE OFFER =================
+  Future<void> _createOffer() async {
+    try {
+      RTCSessionDescription offer = await _peerConnection!.createOffer();
+
+      await _peerConnection!.setLocalDescription(offer);
+
+      await FirebaseFirestore.instance
           .collection('sessions')
           .doc(_sessionId)
-          .collection('callerCandidates')
-          .add({
-        'candidate': candidate.candidate,
-        'sdpMid': candidate.sdpMid,
-        'sdpMLineIndex': candidate.sdpMLineIndex,
+          .update({
+        'offer': {
+          'type': offer.type,
+          'sdp': offer.sdp,
+        },
+        'status': 'waiting',
+        'offerCreatedAt': FieldValue.serverTimestamp(),
       });
-    };
+
+      print('✅ Offer created and sent');
+    } catch (e) {
+      print('❌ Create offer error: $e');
+      throw Exception('Failed to create offer: $e');
+    }
   }
 
-  // ================= OFFER =================
-  Future<void> _createOffer() async {
-    RTCSessionDescription offer =
-    await _peerConnection!.createOffer();
-
-    await _peerConnection!.setLocalDescription(offer);
-
-    await FirebaseFirestore.instance
-        .collection('sessions')
-        .doc(_sessionId)
-        .update({
-      "offer": {
-        "type": offer.type,
-        "sdp": offer.sdp,
-      },
-      "status": "waiting",
-    });
-  }
-
-  // ================= ANSWER LISTENER =================
+  // ================= LISTEN FOR ANSWER =================
   void _listenAnswer() {
-    FirebaseFirestore.instance
+    _answerSub = FirebaseFirestore.instance
         .collection('sessions')
         .doc(_sessionId)
         .snapshots()
-        .listen((doc) async {
-      final data = doc.data();
+        .listen(
+          (doc) async {
+        final data = doc.data();
+        if (data == null) return;
 
-      if (data == null) return;
+        // Set remote description once answer arrives
+        if (data['answer'] != null &&
+            !_remoteDescriptionSet &&
+            _peerConnection != null) {
+          try {
+            _remoteDescriptionSet = true;
 
-      if (data['answer'] != null) {
-        await _peerConnection!.setRemoteDescription(
-          RTCSessionDescription(
-            data['answer']['sdp'],
-            data['answer']['type'],
-          ),
-        );
-      }
-    });
+            await _peerConnection!.setRemoteDescription(
+              RTCSessionDescription(
+                data['answer']['sdp'],
+                data['answer']['type'],
+              ),
+            );
+
+            print('✅ Answer received and set');
+          } catch (e) {
+            print('❌ Set remote description error: $e');
+          }
+        }
+      },
+      onError: (e) => print('❌ Answer listener error: $e'),
+    );
   }
 
-  // ================= ICE LISTENER =================
+  // ================= LISTEN FOR ICE CANDIDATES =================
   void _listenIceCandidates() {
-    FirebaseFirestore.instance
+    _iceSub = FirebaseFirestore.instance
         .collection('sessions')
         .doc(_sessionId)
         .collection('calleeCandidates')
         .snapshots()
-        .listen((snapshot) {
-      for (var change in snapshot.docChanges) {
-        if (change.type == DocumentChangeType.added) {
-          final data = change.doc.data();
-          if (data == null) continue;
+        .listen(
+          (snapshot) {
+        for (var change in snapshot.docChanges) {
+          if (change.type == DocumentChangeType.added) {
+            final data = change.doc.data();
+            if (data == null || _peerConnection == null) continue;
 
-          _peerConnection!.addCandidate(
-            RTCIceCandidate(
-              data['candidate'],
-              data['sdpMid'],
-              data['sdpMLineIndex'],
-            ),
-          );
+            try {
+              _peerConnection!.addCandidate(
+                RTCIceCandidate(
+                  data['candidate'],
+                  data['sdpMid'],
+                  data['sdpMLineIndex'],
+                ),
+              );
+              print('✅ ICE candidate added');
+            } catch (e) {
+              print('❌ Add ICE candidate error: $e');
+            }
+          }
         }
-      }
-    });
+      },
+      onError: (e) => print('❌ ICE listener error: $e'),
+    );
   }
 
-  // ================= SESSION LISTENER =================
+  // ================= LISTEN SESSION STATUS =================
   void _listenSession() {
     _sessionSub = FirebaseFirestore.instance
         .collection('sessions')
         .doc(_sessionId)
         .snapshots()
-        .listen((snapshot) {
-      final data = snapshot.data();
-      if (data == null) return;
+        .listen(
+          (snapshot) {
+        final data = snapshot.data();
+        if (data == null) return;
 
-      setState(() {
-        _status = data['status'] ?? "waiting";
-      });
+        final status = data['status'] as String?;
 
-      if (_status == "active") {
-        Navigator.pushNamed(context, "/videoCall");
+        setState(() => _status = status ?? 'connecting');
+
+        print('📱 Session status: $status');
+
+        // Call is active - navigate to call screen
+        if (status == 'active') {
+          print('✅ Call active - navigating to call screen');
+
+          Navigator.pushReplacement(
+            context,
+            MaterialPageRoute(
+              builder: (_) => CallScreen(
+                sessionId: _sessionId,
+                volunteerId: _volunteerId,
+                userType: 'blind',
+              ),
+            ),
+          );
+        }
+
+        // Call ended
+        if (status == 'ended') {
+          print('☎️ Call ended');
+
+          setState(() => _showAlternativeOptions = true);
+
+          _cleanup();
+        }
+      },
+      onError: (e) => print('❌ Session listener error: $e'),
+    );
+  }
+
+  // ================= WAITING TIMER =================
+  void _startWaitingTimer() {
+    _waitingTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
+      if (mounted) {
+        setState(() => _waitingTime++);
       }
 
-      if (_status == "ended") {
-        setState(() {
-          _showAlternativeOptions = true;
-        });
+      // 60 second timeout
+      if (_waitingTime >= 60) {
+        _stopWaitingTimer();
+        _showError("No volunteer available. Please try again.");
+        _cancelCall();
       }
     });
   }
 
-  // ================= CANCEL =================
+  void _stopWaitingTimer() {
+    _waitingTimer?.cancel();
+    _waitingTimer = null;
+  }
+
+  // ================= CANCEL CALL =================
   Future<void> _cancelCall() async {
-    if (_requestId != null) {
-      await FirebaseFirestore.instance
-          .collection('requests')
-          .doc(_requestId)
-          .update({'status': 'cancelled'});
-    }
+    try {
+      // Update request status
+      if (_requestId != null) {
+        await FirebaseFirestore.instance
+            .collection('requests')
+            .doc(_requestId)
+            .update({
+          'status': 'cancelled',
+          'cancelledAt': FieldValue.serverTimestamp(),
+        });
+      }
 
-    if (_sessionId != null) {
-      await FirebaseFirestore.instance
-          .collection('sessions')
-          .doc(_sessionId)
-          .update({'status': 'ended'});
-    }
+      // Update session status if exists
+      if (_sessionId != null) {
+        await FirebaseFirestore.instance
+            .collection('sessions')
+            .doc(_sessionId)
+            .update({
+          'status': 'ended',
+          'endedAt': FieldValue.serverTimestamp(),
+        });
+      }
 
-    await _tts.speak("Call cancelled");
+      await _tts.speak("Call cancelled");
+      _cleanup();
+
+      if (mounted) Navigator.of(context).pop();
+    } catch (e) {
+      print('❌ Cancel call error: $e');
+      if (mounted) Navigator.of(context).pop();
+    }
+  }
+
+  // ================= CLEANUP =================
+  void _cleanup() {
+    _stopWaitingTimer();
+    _localStream?.getTracks().forEach((track) => track.stop());
+    _peerConnection?.close();
+    _requestSub?.cancel();
+    _sessionSub?.cancel();
+    _answerSub?.cancel();
+    _iceSub?.cancel();
   }
 
   void _showError(String msg) {
-    ScaffoldMessenger.of(context)
-        .showSnackBar(SnackBar(content: Text(msg)));
+    if (!mounted) return;
+    print('⚠️ Error: $msg');
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(msg),
+        backgroundColor: Colors.red,
+        duration: const Duration(seconds: 3),
+      ),
+    );
   }
 
-  // ================= DISPOSE =================
+  String _formatWaitingTime(int seconds) {
+    final mins = seconds ~/ 60;
+    final secs = seconds % 60;
+    return '${mins.toString().padLeft(2, '0')}:${secs.toString().padLeft(2, '0')}';
+  }
+
   @override
   void dispose() {
-    _requestSub?.cancel();
-    _sessionSub?.cancel();
-    _peerConnection?.close();
-    _localStream?.dispose();
+    _cleanup();
     _tts.stop();
     super.dispose();
   }
 
-  // ================= UI (UNCHANGED) =================
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -360,17 +544,63 @@ class _CallVolunteerScreenState extends State<CallVolunteerScreen> {
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            const CircularProgressIndicator(),
-            const SizedBox(height: 20),
-            Text(_status,
-                style: const TextStyle(
-                    fontSize: 20, fontWeight: FontWeight.bold)),
-            const SizedBox(height: 20),
-
-            ElevatedButton(
-              onPressed: _cancelCall,
-              child: const Text("Cancel Call"),
+            const CircularProgressIndicator(
+              strokeWidth: 3,
             ),
+            const SizedBox(height: 30),
+            Text(
+              _status,
+              style: const TextStyle(
+                fontSize: 20,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+            const SizedBox(height: 20),
+            Text(
+              'Waiting time: ${_formatWaitingTime(_waitingTime)}',
+              style: const TextStyle(
+                fontSize: 16,
+                color: Colors.grey,
+              ),
+            ),
+            const SizedBox(height: 40),
+            ElevatedButton.icon(
+              onPressed: _cancelCall,
+              icon: const Icon(Icons.call_end),
+              label: const Text("Cancel Call"),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.red,
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 30,
+                  vertical: 15,
+                ),
+              ),
+            ),
+            if (_showAlternativeOptions) ...[
+              const SizedBox(height: 40),
+              const Text(
+                "Alternative Options:",
+                style: TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+              const SizedBox(height: 20),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  ElevatedButton(
+                    onPressed: () => Navigator.pushNamed(context, '/scene'),
+                    child: const Text("Scene Description"),
+                  ),
+                  const SizedBox(width: 20),
+                  ElevatedButton(
+                    onPressed: () => Navigator.pushNamed(context, '/offline'),
+                    child: const Text("Offline Help"),
+                  ),
+                ],
+              ),
+            ]
           ],
         ),
       ),

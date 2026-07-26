@@ -444,6 +444,9 @@ class _FamilyLoginScreenState extends State<FamilyLoginScreen> {
 
   bool isLoading = false;
 
+  final GoogleSignIn _googleSignIn = GoogleSignIn();
+
+  // ================= EMAIL/PASSWORD LOGIN =================
   void _login() async {
     String email = emailController.text.trim();
     String password = passwordController.text.trim();
@@ -461,73 +464,95 @@ class _FamilyLoginScreenState extends State<FamilyLoginScreen> {
     setState(() => isLoading = true);
 
     try {
-      // ✅ Only Firebase Authentication
-      await FirebaseAuth.instance
-          .signInWithEmailAndPassword(email: email, password: password);
+      await FirebaseAuth.instance.signInWithEmailAndPassword(
+        email: email,
+        password: password,
+      );
 
-      // ✅ Direct navigation..
       if (!mounted) return;
+
       Navigator.pushReplacement(
         context,
-        MaterialPageRoute(builder: (context) => FamilyDashboard()),
+        MaterialPageRoute(builder: (_) => const FamilyDashboard()),
       );
-
     } on FirebaseAuthException catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(e.message ?? "Login failed"),
-          backgroundColor: Colors.red,
-        ),
-      );
-    }
+      String msg = "Login failed";
 
-    setState(() => isLoading = false);
+      if (e.code == "user-not-found") {
+        msg = "No user found";
+      } else if (e.code == "wrong-password") {
+        msg = "Wrong password";
+      } else if (e.code == "invalid-email") {
+        msg = "Invalid email";
+      }
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(msg), backgroundColor: Colors.red),
+      );
+    } finally {
+      if (mounted) setState(() => isLoading = false);
+    }
   }
 
-  Future<void> _googleSignIn() async {
+  // ================= GOOGLE SIGN-IN =================
+  Future<void> _googleSignInMethod() async {
     try {
       setState(() => isLoading = true);
 
-      final GoogleSignInAccount? googleUser = await GoogleSignIn().signIn();
+      final GoogleSignInAccount? googleUser = await _googleSignIn.signIn();
 
-      if (googleUser == null) {
-        setState(() => isLoading = false);
-        return;
-      }
+      if (googleUser == null) return;
 
-      // final GoogleSignInAuthentication googleAuth =
-      // await googleUser.authentication;
-      //
-      // final credential = GoogleAuthProvider.credential(
-      //   accessToken: googleAuth.accessToken,
-      //   idToken: googleAuth.idToken,
-      // );
       final GoogleSignInAuthentication googleAuth =
       await googleUser.authentication;
 
       final credential = GoogleAuthProvider.credential(
-        idToken: googleAuth.idToken!,
+        accessToken: googleAuth.accessToken,
+        idToken: googleAuth.idToken,
       );
-      // ✅ Only Firebase Authentication
+
       await FirebaseAuth.instance.signInWithCredential(credential);
 
-      // ✅ Direct navigation
       if (!mounted) return;
+
       Navigator.pushReplacement(
         context,
-        MaterialPageRoute(builder: (context) => FamilyDashboard()),
+        MaterialPageRoute(builder: (_) => const FamilyDashboard()),
       );
-
     } catch (e) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text("Google Sign-In failed"),
-          backgroundColor: Colors.red,
-        ),
+        SnackBar(content: Text("Google Sign-In failed: $e")),
       );
+    } finally {
+      if (mounted) setState(() => isLoading = false);
+    }
+  }
+
+  // ================= FORGOT PASSWORD =================
+  void _resetPassword() async {
+    String email = emailController.text.trim();
+
+    if (email.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text("Enter email first")),
+      );
+      return;
     }
 
-    setState(() => isLoading = false);
+    try {
+      await FirebaseAuth.instance.sendPasswordResetEmail(email: email);
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text("Password reset link sent"),
+          backgroundColor: Colors.green,
+        ),
+      );
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text("Error: $e")),
+      );
+    }
   }
 
   @override
@@ -538,9 +563,7 @@ class _FamilyLoginScreenState extends State<FamilyLoginScreen> {
         elevation: 0,
         leading: IconButton(
           icon: const Icon(Icons.arrow_back, color: Colors.white),
-          onPressed: () {
-            Navigator.pop(context);
-          },
+          onPressed: () => Navigator.pop(context),
         ),
       ),
       extendBodyBehindAppBar: true,
@@ -558,8 +581,6 @@ class _FamilyLoginScreenState extends State<FamilyLoginScreen> {
               Color(0xFF0B0211),
               Color(0xFF0B0211),
             ],
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
           ),
         ),
         child: Center(
@@ -578,13 +599,6 @@ class _FamilyLoginScreenState extends State<FamilyLoginScreen> {
                       color: const Color(0xFF8000FF).withOpacity(0.5),
                       width: 1.8,
                     ),
-                    boxShadow: [
-                      BoxShadow(
-                        color: const Color(0xFF8000FF).withOpacity(0.25),
-                        blurRadius: 20,
-                        offset: const Offset(0, 8),
-                      ),
-                    ],
                   ),
                   child: Form(
                     key: _formKey,
@@ -599,30 +613,29 @@ class _FamilyLoginScreenState extends State<FamilyLoginScreen> {
                             fontWeight: FontWeight.bold,
                           ),
                         ),
+
                         const SizedBox(height: 30),
+
                         _buildTextField(
                           controller: emailController,
                           icon: Icons.email,
                           hint: "Email",
                         ),
+
                         const SizedBox(height: 15),
+
                         _buildTextField(
                           controller: passwordController,
                           icon: Icons.lock,
                           hint: "Password",
                           isPassword: true,
                         ),
+
                         const SizedBox(height: 15),
+
+                        // ================= FORGOT PASSWORD =================
                         GestureDetector(
-                          onTap: () {
-                            Navigator.push(
-                              context,
-                              MaterialPageRoute(
-                                builder: (context) =>
-                                const ForgotPasswordScreen(),
-                              ),
-                            );
-                          },
+                          onTap: _resetPassword,
                           child: const Text(
                             "Forgot Password?",
                             style: TextStyle(
@@ -632,42 +645,25 @@ class _FamilyLoginScreenState extends State<FamilyLoginScreen> {
                             ),
                           ),
                         ),
+
                         const SizedBox(height: 25),
+
                         if (isLoading)
-                          const Padding(
-                            padding: EdgeInsets.only(bottom: 15),
-                            child: CircularProgressIndicator(
-                              color: Color(0xFF8000FF),
-                            ),
+                          const CircularProgressIndicator(
+                            color: Color(0xFF8000FF),
                           ),
-                        Container(
+
+                        const SizedBox(height: 10),
+
+                        SizedBox(
                           width: double.infinity,
-                          decoration: BoxDecoration(
-                            borderRadius: BorderRadius.circular(15),
-                            gradient: const LinearGradient(
-                              colors: [
-                                Color(0xFF8000FF),
-                                Color(0xFF570A57),
-                              ],
-                            ),
-                          ),
                           child: ElevatedButton(
                             style: ElevatedButton.styleFrom(
-                              backgroundColor: Colors.transparent,
-                              shadowColor: Colors.transparent,
+                              backgroundColor: const Color(0xFF8000FF),
                               padding:
                               const EdgeInsets.symmetric(vertical: 16),
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(15),
-                              ),
                             ),
-                            onPressed: isLoading
-                                ? null
-                                : () {
-                              if (_formKey.currentState!.validate()) {
-                                _login();
-                              }
-                            },
+                            onPressed: isLoading ? null : _login,
                             child: const Text(
                               "Login",
                               style: TextStyle(
@@ -678,72 +674,37 @@ class _FamilyLoginScreenState extends State<FamilyLoginScreen> {
                             ),
                           ),
                         ),
+
                         const SizedBox(height: 25),
-                        Row(
-                          children: const [
-                            Expanded(child: Divider(color: Colors.white24)),
-                            Padding(
-                              padding: EdgeInsets.symmetric(horizontal: 10),
-                              child: Text("OR",
-                                  style: TextStyle(color: Colors.white54)),
-                            ),
-                            Expanded(child: Divider(color: Colors.white24)),
-                          ],
-                        ),
+
+                        const Text("OR",
+                            style: TextStyle(color: Colors.white54)),
+
                         const SizedBox(height: 20),
-                        Row(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            GestureDetector(
-                              onTap: isLoading ? null : _googleSignIn,
-                              child: Container(
-                                padding: const EdgeInsets.all(14),
-                                decoration: const BoxDecoration(
-                                  shape: BoxShape.circle,
-                                  color: Colors.white,
-                                ),
-                                child: Image.asset(
-                                  "assets/images/image.jpg",
-                                  height: 26,
-                                ),
-                              ),
+
+                        GestureDetector(
+                          onTap: isLoading ? null : _googleSignInMethod,
+                          child: Container(
+                            padding: const EdgeInsets.all(14),
+                            decoration: const BoxDecoration(
+                              shape: BoxShape.circle,
+                              color: Colors.white,
                             ),
-                            const SizedBox(width: 25),
-                            GestureDetector(
-                              onTap: isLoading
-                                  ? null
-                                  : () {
-                                if (_formKey.currentState!.validate()) {
-                                  _login();
-                                }
-                              },
-                              child: Container(
-                                padding: const EdgeInsets.all(14),
-                                decoration: const BoxDecoration(
-                                  shape: BoxShape.circle,
-                                  color: Color(0xFF8000FF),
-                                ),
-                                child: const Icon(
-                                  Icons.email,
-                                  color: Colors.white,
-                                  size: 26,
-                                ),
-                              ),
-                            ),
-                          ],
+                            child: const Icon(Icons.g_mobiledata,
+                                size: 30, color: Colors.black),
+                          ),
                         ),
+
                         const SizedBox(height: 25),
+
                         GestureDetector(
                           onTap: () {
-                            if (!isLoading) {
-                              Navigator.pushReplacement(
-                                context,
-                                MaterialPageRoute(
-                                  builder: (context) =>
-                                  const FamilyRegScreen(),
-                                ),
-                              );
-                            }
+                            Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (_) => const FamilyRegScreen(),
+                              ),
+                            );
                           },
                           child: const Text.rich(
                             TextSpan(
@@ -787,13 +748,11 @@ class _FamilyLoginScreenState extends State<FamilyLoginScreen> {
         if (value == null || value.isEmpty) {
           return "$hint is required";
         }
-        if (hint == "Email" && !(value.trim().contains("@"))) {
+        if (hint == "Email" && !value.contains("@")) {
           return "Enter valid email";
         }
-        if (hint == "Password") {
-          if (value.length < 6) {
-            return "Password must be at least 6 characters";
-          }
+        if (hint == "Password" && value.length < 6) {
+          return "Password must be at least 6 characters";
         }
         return null;
       },
@@ -803,15 +762,9 @@ class _FamilyLoginScreenState extends State<FamilyLoginScreen> {
         hintStyle: TextStyle(color: Colors.white.withOpacity(0.7)),
         filled: true,
         fillColor: Colors.white.withOpacity(0.08),
-        enabledBorder: OutlineInputBorder(
+        border: OutlineInputBorder(
           borderRadius: BorderRadius.circular(15),
-          borderSide:
-          BorderSide(color: const Color(0xFF8000FF).withOpacity(0.3)),
-        ),
-        focusedBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(15),
-          borderSide:
-          const BorderSide(color: Color(0xFF8000FF), width: 2),
+          borderSide: BorderSide.none,
         ),
       ),
     );

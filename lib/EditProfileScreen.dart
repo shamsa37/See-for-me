@@ -2,8 +2,9 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 
-// ✅ Tumhari ChangePasswordScreen import karo
 import 'ChangePasswordScreen.dart';
 
 class EditProfileScreen extends StatefulWidget {
@@ -17,14 +18,15 @@ class _EditProfileScreenState extends State<EditProfileScreen>
     with TickerProviderStateMixin {
   final TextEditingController nameController = TextEditingController();
   final TextEditingController emailController = TextEditingController();
-  final TextEditingController phoneController = TextEditingController();
   final TextEditingController availabilityController = TextEditingController();
-  final TextEditingController skillsController = TextEditingController();
 
   File? _profileImage;
+  bool _isLoading = false;
 
   late final List<AnimationController> _controllers;
   late final List<Animation<Offset>> _animations;
+
+  String? get currentUserId => FirebaseAuth.instance.currentUser?.uid;
 
   @override
   void initState() {
@@ -33,7 +35,7 @@ class _EditProfileScreenState extends State<EditProfileScreen>
 
     // 🎬 Animations setup
     _controllers = List.generate(
-      7,
+      5,
           (index) => AnimationController(
         vsync: this,
         duration: const Duration(milliseconds: 500),
@@ -42,7 +44,7 @@ class _EditProfileScreenState extends State<EditProfileScreen>
 
     _animations = _controllers
         .map((c) => Tween<Offset>(
-      begin: const Offset(1, 0), // Slide from right
+      begin: const Offset(1, 0),
       end: Offset.zero,
     ).animate(CurvedAnimation(parent: c, curve: Curves.easeOut)))
         .toList();
@@ -65,38 +67,98 @@ class _EditProfileScreenState extends State<EditProfileScreen>
       setState(() {
         _profileImage = File(pickedFile.path);
       });
-      _saveProfileData();
     }
   }
 
+  // ✅ Firestore + Local SharedPreferences Save Method
   Future<void> _saveProfileData() async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setString('name', nameController.text);
-    await prefs.setString('email', emailController.text);
-    await prefs.setString('phone', phoneController.text);
-    await prefs.setString('availability', availabilityController.text);
-    await prefs.setString('skills', skillsController.text);
-    if (_profileImage != null) {
-      await prefs.setString('profileImage', _profileImage!.path);
+    setState(() {
+      _isLoading = true;
+    });
+
+    try {
+      // 1. Save locally in SharedPreferences
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString('name', nameController.text.trim());
+      await prefs.setString('email', emailController.text.trim());
+      await prefs.setString('availability', availabilityController.text.trim());
+      if (_profileImage != null) {
+        await prefs.setString('profileImage', _profileImage!.path);
+      }
+
+      // 2. Save directly in Firebase Firestore for Volunteer Dashboard
+      if (currentUserId != null) {
+        await FirebaseFirestore.instance
+            .collection('volunteer')
+            .doc(currentUserId)
+            .set({
+          'name': nameController.text.trim(),
+          'email': emailController.text.trim(),
+          'availability': availabilityController.text.trim(),
+          'updatedAt': FieldValue.serverTimestamp(),
+        }, SetOptions(merge: true));
+      }
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text("Profile updated successfully!"),
+            backgroundColor: Colors.green,
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text("Error updating profile: $e"),
+            backgroundColor: Colors.redAccent,
+          ),
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+        });
+      }
     }
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text("Profile updated successfully!")),
-    );
   }
 
+  // ✅ Initial Load from Local Prefs & Firestore Sync
   Future<void> _loadProfileData() async {
     final prefs = await SharedPreferences.getInstance();
     setState(() {
       nameController.text = prefs.getString('name') ?? '';
       emailController.text = prefs.getString('email') ?? '';
-      phoneController.text = prefs.getString('phone') ?? '';
       availabilityController.text = prefs.getString('availability') ?? '';
-      skillsController.text = prefs.getString('skills') ?? '';
       final imagePath = prefs.getString('profileImage');
       if (imagePath != null && imagePath.isNotEmpty) {
         _profileImage = File(imagePath);
       }
     });
+
+    if (currentUserId != null) {
+      try {
+        var doc = await FirebaseFirestore.instance
+            .collection('volunteer')
+            .doc(currentUserId)
+            .get();
+
+        if (doc.exists && doc.data() != null) {
+          var data = doc.data()!;
+          setState(() {
+            if (data.containsKey('name')) nameController.text = data['name'] ?? '';
+            if (data.containsKey('email')) emailController.text = data['email'] ?? '';
+            if (data.containsKey('availability')) {
+              availabilityController.text = data['availability'] ?? '';
+            }
+          });
+        }
+      } catch (e) {
+        debugPrint("Error fetching profile: $e");
+      }
+    }
   }
 
   @override
@@ -104,13 +166,16 @@ class _EditProfileScreenState extends State<EditProfileScreen>
     for (var c in _controllers) {
       c.dispose();
     }
+    nameController.dispose();
+    emailController.dispose();
+    availabilityController.dispose();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      extendBodyBehindAppBar: true, // 👈 Gradient ke upar appbar
+      extendBodyBehindAppBar: true,
       appBar: AppBar(
         title: const Text(
           "Edit Profile",
@@ -122,9 +187,10 @@ class _EditProfileScreenState extends State<EditProfileScreen>
         iconTheme: const IconThemeData(color: Colors.white),
       ),
       body: Container(
+        height: double.infinity,
         decoration: const BoxDecoration(
           gradient: LinearGradient(
-            colors: [Colors.black, Color(0xFF6A1B9A)], // Black → Purple
+            colors: [Colors.black, Color(0xFF6A1B9A)],
             begin: Alignment.topLeft,
             end: Alignment.bottomRight,
           ),
@@ -133,7 +199,7 @@ class _EditProfileScreenState extends State<EditProfileScreen>
           padding: const EdgeInsets.all(20),
           child: Column(
             children: [
-              const SizedBox(height: 100), // 👈 AppBar ke liye spacing
+              const SizedBox(height: 100),
               SlideTransition(
                 position: _animations[0],
                 child: GestureDetector(
@@ -159,21 +225,15 @@ class _EditProfileScreenState extends State<EditProfileScreen>
                   child: _buildTextField(emailController, "Email")),
               SlideTransition(
                   position: _animations[3],
-                  child: _buildTextField(phoneController, "Phone")),
-              SlideTransition(
-                  position: _animations[4],
                   child: _buildTextField(
                       availabilityController, "Availability")),
-              SlideTransition(
-                  position: _animations[5],
-                  child: _buildTextField(skillsController, "Skills")),
               const SizedBox(height: 20),
               SlideTransition(
-                position: _animations[6],
+                position: _animations[4],
                 child: Column(
                   children: [
                     ElevatedButton(
-                      onPressed: _saveProfileData,
+                      onPressed: _isLoading ? null : _saveProfileData,
                       style: ElevatedButton.styleFrom(
                         backgroundColor: Colors.deepPurple,
                         padding: const EdgeInsets.symmetric(
@@ -181,8 +241,16 @@ class _EditProfileScreenState extends State<EditProfileScreen>
                         shape: RoundedRectangleBorder(
                             borderRadius: BorderRadius.circular(25)),
                       ),
-                      child: const Text("Save Profile",
-                          style: TextStyle(fontSize: 16, color: Colors.white)),
+                      child: _isLoading
+                          ? const SizedBox(
+                        height: 20,
+                        width: 20,
+                        child: CircularProgressIndicator(
+                            color: Colors.white, strokeWidth: 2),
+                      )
+                          : const Text("Save Profile",
+                          style:
+                          TextStyle(fontSize: 16, color: Colors.white)),
                     ),
                     const SizedBox(height: 15),
                     ElevatedButton(

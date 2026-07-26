@@ -244,11 +244,8 @@
 
 
 import 'package:flutter/material.dart';
-import 'package:shared_preferences/shared_preferences.dart';
-import 'dart:convert';
 import 'dart:ui';
 import 'sos_screen.dart';
-// NEW IMPORTS
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 
@@ -266,12 +263,13 @@ class _AddContactScreenState extends State<AddContactScreen> {
   final FocusNode _nameFocus = FocusNode();
   final FocusNode _numberFocus = FocusNode();
 
-  List<Map<String, String>> _contacts = [];
+  List<Map<String, dynamic>> _sentRequests = [];
+  bool _isLoading = false;
 
   @override
   void initState() {
     super.initState();
-    _loadContacts();
+    _loadSentRequests();
   }
 
   @override
@@ -283,97 +281,105 @@ class _AddContactScreenState extends State<AddContactScreen> {
     super.dispose();
   }
 
-  // UID Getter
   String? get currentUid => FirebaseAuth.instance.currentUser?.uid;
 
-  // Updated to load from Firestore
-  Future<void> _loadContacts() async {
-    if (currentUid == null) {
-      debugPrint("❌ No User Logged In");
-      return;
-    }
+  // Load Saved Contacts from SOS Sub-collection
+  Future<void> _loadSentRequests() async {
+    if (currentUid == null) return;
 
     try {
       final snapshot = await FirebaseFirestore.instance
-          .collection('blind')
+          .collection('users')
           .doc(currentUid)
-          .collection('sos_contacts')
+          .collection('sos')
+          .doc('default')
+          .collection('contacts')
+          .orderBy('createdAt', descending: true)
           .get();
 
-      if (snapshot.docs.isNotEmpty) {
-        setState(() {
-          _contacts = snapshot.docs.map((doc) => {
-            'name': doc['name'].toString(),
-            'number': doc['number'].toString(),
-          }).toList();
+      List<Map<String, dynamic>> tempRequests = [];
+
+      for (var doc in snapshot.docs) {
+        tempRequests.add({
+          'id': doc.id,
+          'name': doc['name'] ?? 'Family Member',
+          'number': doc['phone'] ?? '',
+          'status': doc['status'] ?? 'accepted',
         });
-      } else {
-        // Fallback to local if Firestore is empty
-        SharedPreferences prefs = await SharedPreferences.getInstance();
-        String? data = prefs.getString('sos_contacts');
-        if (data != null && data.isNotEmpty) {
-          List<dynamic> decoded = jsonDecode(data);
-          setState(() {
-            _contacts = decoded.map((e) => Map<String, String>.from(e)).toList();
-          });
-        }
       }
+
+      setState(() {
+        _sentRequests = tempRequests;
+      });
     } catch (e) {
-      debugPrint("Error loading contacts: $e");
+      debugPrint("Error loading requests: $e");
     }
   }
 
-  // Updated to Save to Firestore with Debugging
-  Future<void> _saveContact() async {
+  // Save Contact directly under users -> {uid} -> sos -> default -> contacts
+  Future<void> _sendConnectionRequest() async {
     final name = _nameController.text.trim();
     final number = _numberController.text.trim();
 
-    if (name.isEmpty || number.isEmpty) return;
-
-    if (currentUid == null) {
+    if (name.isEmpty || number.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text("Error: User session expired. Please login again.")),
+        const SnackBar(content: Text("Please fill all fields")),
       );
       return;
     }
 
+    if (currentUid == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text("User session expired. Please login again.")),
+      );
+      return;
+    }
+
+    setState(() => _isLoading = true);
+
     try {
-      // 1. Save to Firestore (blind -> UID -> sos_contacts)
+      // 📌 UPDATED PATH: users/{uid}/sos/default/contacts
       await FirebaseFirestore.instance
-          .collection('blind')
-          .doc(currentUid!)
-          .collection('sos_contacts')
+          .collection('users')
+          .doc(currentUid)
+          .collection('sos')
+          .doc('default')
+          .collection('contacts')
           .add({
         'name': name,
-        'number': number,
-        'created_at': FieldValue.serverTimestamp(),
+        'phone': number,
+        'status': 'accepted',
+        'createdAt': FieldValue.serverTimestamp(),
       });
 
-      debugPrint("✅ Saved to Firestore Successfully");
-
-      // 2. Update Local List & SharedPreferences
-      setState(() {
-        _contacts.add({'name': name, 'number': number});
-      });
-
-      SharedPreferences prefs = await SharedPreferences.getInstance();
-      await prefs.setString('sos_contacts', jsonEncode(_contacts));
+      debugPrint("✅ Contact saved under blind user's SOS sub-collection!");
 
       _nameController.clear();
       _numberController.clear();
 
-      // ✅ Navigate to SOS screen
+      await _loadSentRequests();
+
+      setState(() => _isLoading = false);
+
       if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text("Contact saved successfully!")),
+        );
+
+        // Back to SOS Screen
         Navigator.pushReplacement(
           context,
-          MaterialPageRoute(builder: (context) => const sos_screen()),
+          MaterialPageRoute(builder: (context) => const SosScreen()),
         );
       }
     } catch (e) {
-      debugPrint("❌ Firestore Error: $e");
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text("Cloud Save Failed: $e")),
-      );
+      setState(() => _isLoading = false);
+      debugPrint("❌ Firestore Request Error: $e");
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text("Request Failed: $e")),
+        );
+      }
     }
   }
 
@@ -409,9 +415,9 @@ class _AddContactScreenState extends State<AddContactScreen> {
                       children: [
                         Center(
                           child: Text(
-                            "Add Contact",
+                            "Add SOS Contact",
                             style: TextStyle(
-                              fontSize: 26,
+                              fontSize: 24,
                               fontWeight: FontWeight.bold,
                               color: Colors.purple.shade500,
                             ),
@@ -419,7 +425,7 @@ class _AddContactScreenState extends State<AddContactScreen> {
                         ),
                         const SizedBox(height: 25),
                         const Text(
-                          "Name",
+                          "Family Member Name",
                           style: TextStyle(
                             fontSize: 17,
                             fontWeight: FontWeight.bold,
@@ -433,20 +439,22 @@ class _AddContactScreenState extends State<AddContactScreen> {
                           decoration: InputDecoration(
                             filled: true,
                             fillColor: Colors.white.withOpacity(0.25),
-                            contentPadding: const EdgeInsets.symmetric(horizontal: 15, vertical: 12),
+                            contentPadding: const EdgeInsets.symmetric(
+                                horizontal: 15, vertical: 12),
                             enabledBorder: OutlineInputBorder(
                               borderRadius: BorderRadius.circular(15),
                               borderSide: BorderSide.none,
                             ),
                             focusedBorder: OutlineInputBorder(
                               borderRadius: BorderRadius.circular(15),
-                              borderSide: const BorderSide(color: Colors.purple, width: 2),
+                              borderSide: const BorderSide(
+                                  color: Colors.purple, width: 2),
                             ),
                           ),
                         ),
                         const SizedBox(height: 20),
                         const Text(
-                          "Number",
+                          "Registered Phone Number",
                           style: TextStyle(
                             fontSize: 17,
                             fontWeight: FontWeight.bold,
@@ -461,33 +469,43 @@ class _AddContactScreenState extends State<AddContactScreen> {
                           decoration: InputDecoration(
                             filled: true,
                             fillColor: Colors.white.withOpacity(0.25),
-                            contentPadding: const EdgeInsets.symmetric(horizontal: 15, vertical: 12),
+                            contentPadding: const EdgeInsets.symmetric(
+                                horizontal: 15, vertical: 12),
                             enabledBorder: OutlineInputBorder(
                               borderRadius: BorderRadius.circular(15),
                               borderSide: BorderSide.none,
                             ),
                             focusedBorder: OutlineInputBorder(
                               borderRadius: BorderRadius.circular(15),
-                              borderSide: const BorderSide(color: Colors.purple, width: 2),
+                              borderSide: const BorderSide(
+                                  color: Colors.purple, width: 2),
                             ),
                           ),
                         ),
                         const SizedBox(height: 25),
-                        GestureDetector(
-                          onTap: _saveContact,
+                        _isLoading
+                            ? const Center(
+                            child:
+                            CircularProgressIndicator(color: Colors.purple))
+                            : GestureDetector(
+                          onTap: _sendConnectionRequest,
                           child: Container(
-                            padding: const EdgeInsets.symmetric(vertical: 15),
+                            padding:
+                            const EdgeInsets.symmetric(vertical: 15),
                             decoration: BoxDecoration(
                               borderRadius: BorderRadius.circular(20),
                               gradient: const LinearGradient(
-                                colors: [Color(0xFF6A1B9A), Color(0xFF8E24AA)],
+                                colors: [
+                                  Color(0xFF6A1B9A),
+                                  Color(0xFF8E24AA)
+                                ],
                                 begin: Alignment.topLeft,
                                 end: Alignment.bottomRight,
                               ),
                             ),
                             child: const Center(
                               child: Text(
-                                "Save Contact",
+                                "Save SOS Contact",
                                 style: TextStyle(
                                     color: Colors.white,
                                     fontSize: 18,
@@ -505,7 +523,7 @@ class _AddContactScreenState extends State<AddContactScreen> {
               const Align(
                 alignment: Alignment.centerLeft,
                 child: Text(
-                  "Saved Contacts:",
+                  "Saved SOS Contacts:",
                   style: TextStyle(
                     fontWeight: FontWeight.bold,
                     fontSize: 16,
@@ -514,19 +532,26 @@ class _AddContactScreenState extends State<AddContactScreen> {
                 ),
               ),
               const SizedBox(height: 10),
-              if (_contacts.isEmpty)
-                const Text("No contacts saved yet")
+              if (_sentRequests.isEmpty)
+                const Text("No SOS contacts saved yet")
               else
                 ListView.builder(
                   shrinkWrap: true,
                   physics: const NeverScrollableScrollPhysics(),
-                  itemCount: _contacts.length,
+                  itemCount: _sentRequests.length,
                   itemBuilder: (context, index) {
-                    final c = _contacts[index];
+                    final r = _sentRequests[index];
                     return ListTile(
-                      title: Text(c['name'] ?? ''),
-                      subtitle: Text(c['number'] ?? ''),
-                      leading: const Icon(Icons.person, color: Colors.deepPurple),
+                      title: Text(r['name'] ?? ''),
+                      subtitle: Text(r['number'] ?? ''),
+                      leading: const Icon(Icons.verified, color: Colors.green),
+                      trailing: const Text(
+                        "Saved",
+                        style: TextStyle(
+                          color: Colors.green,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
                     );
                   },
                 ),

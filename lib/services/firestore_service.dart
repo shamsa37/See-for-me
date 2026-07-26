@@ -1,88 +1,115 @@
-// import 'package:cloud_firestore/cloud_firestore.dart';
-// import 'package:firebase_auth/firebase_auth.dart';
-//
-// class FirestoreService {
-//   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
-//
-//   Future<void> sendRequest(String type) async {
-//     String uid = FirebaseAuth.instance.currentUser!.uid;
-//
-//     await _firestore.collection('requests').add({
-//       'blindUserId': uid,
-//       'volunteerId': null,
-//       'type': type,
-//       'status': 'pending',
-//       'timestamp': FieldValue.serverTimestamp(),
-//     });
-//   }
-// }
-
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:firebase_auth/firebase_auth.dart';
+import '../models/HelpRequest.dart';
 
 class FirestoreService {
-  final FirebaseFirestore _firestore = FirebaseFirestore.instance;
+  final FirebaseFirestore _db = FirebaseFirestore.instance;
 
-  // ================= SEND REQUEST =================
-  Future<String> sendRequest(String type, String sessionId) async {
-    String uid = FirebaseAuth.instance.currentUser!.uid;
+  /// requests collection
+  CollectionReference<Map<String, dynamic>> get _requests =>
+      _db.collection('requests');
 
-    DocumentReference requestRef =
-    await _firestore.collection('requests').add({
-      'blindUserId': uid,
-      'sessionId': sessionId,
-      'type': type, // call, help, emergency
+  /// ============================
+  /// CREATE HELP REQUEST
+  /// ============================
+  Future<String> createHelpRequest({
+    required String userId,
+    String type = 'help',
+  }) async {
+    final doc = await _requests.add({
+      'userId': userId,
+      'type': type,
       'status': 'pending',
       'volunteerId': null,
+      'sessionId': null,
       'createdAt': FieldValue.serverTimestamp(),
     });
 
-    // 🔥 LINK REQUEST TO SESSION
-    await _firestore.collection('sessions').doc(sessionId).update({
-      'status': 'ringing',
-      'requestId': requestRef.id,
-    });
-
-    return requestRef.id;
+    return doc.id;
   }
 
-  // ================= ACCEPT REQUEST ===================
-  Future<void> acceptRequest(
-      String requestId,
-      String sessionId,
-      String volunteerId,
-      ) async {
+  /// ============================
+  /// STREAM ALL PENDING REQUESTS
+  /// ============================
+  Stream<List<HelpRequest>> streamPendingRequests() {
+    return _requests
+        .where('status', isEqualTo: 'pending')
+        .orderBy('createdAt', descending: true)
+        .snapshots()
+        .map((snapshot) {
+      return snapshot.docs
+          .map((doc) => HelpRequest.fromFirestore(doc))
+          .toList();
+    });
+  }
 
-    // update request
-    await _firestore.collection('requests').doc(requestId).update({
-      'volunteerId': volunteerId,
+  /// ============================
+  /// STREAM SINGLE REQUEST
+  /// ============================
+  Stream<HelpRequest?> streamRequest(String requestId) {
+    return _requests.doc(requestId).snapshots().map((doc) {
+      if (!doc.exists) return null;
+      return HelpRequest.fromFirestore(doc);
+    });
+  }
+
+  /// ============================
+  /// ACCEPT REQUEST
+  /// ============================
+  Future<void> acceptRequest({
+    required String requestId,
+    required String volunteerId,
+    required String sessionId,
+  }) async {
+    await _requests.doc(requestId).update({
       'status': 'accepted',
-      'acceptedAt': FieldValue.serverTimestamp(),
-    });
-
-    // update session (IMPORTANT FIX)
-    await _firestore.collection('sessions').doc(sessionId).update({
       'volunteerId': volunteerId,
-      'status': 'active',
+      'sessionId': sessionId,
       'acceptedAt': FieldValue.serverTimestamp(),
     });
   }
 
-  // ================= REJECT REQUEST =================
+  /// ============================
+  /// REJECT REQUEST
+  /// ============================
   Future<void> rejectRequest(String requestId) async {
-    await _firestore.collection('requests').doc(requestId).update({
+    await _requests.doc(requestId).update({
       'status': 'rejected',
       'rejectedAt': FieldValue.serverTimestamp(),
     });
   }
 
-  // ================= LISTEN REQUEST =================
-  Stream<DocumentSnapshot> listenRequest(String requestId) {
-    return _firestore.collection('requests').doc(requestId).snapshots();
+  /// ============================
+  /// CANCEL REQUEST
+  /// ============================
+  Future<void> cancelRequest(String requestId) async {
+    await _requests.doc(requestId).update({
+      'status': 'cancelled',
+      'cancelledAt': FieldValue.serverTimestamp(),
+    });
   }
 
-  // ================= LISTEN SESSION =================
-  Stream<DocumentSnapshot> listenSession(String sessionId) {
-    return _firestore.collection('sessions').doc(sessionId).snapshots();
+  /// ============================
+  /// GET SINGLE REQUEST
+  /// ============================
+  Future<HelpRequest?> getRequest(String requestId) async {
+    final doc = await _requests.doc(requestId).get();
+
+    if (!doc.exists) return null;
+
+    return HelpRequest.fromFirestore(doc);
+  }
+
+  /// ============================
+  /// USER REQUEST HISTORY
+  /// ============================
+  Future<List<HelpRequest>> getUserRequests(String userId) async {
+    final snapshot = await _requests
+        .where('userId', isEqualTo: userId)
+        .orderBy('createdAt', descending: true)
+        .get();
+
+    return snapshot.docs
+        .map((doc) => HelpRequest.fromFirestore(doc))
+        .toList();
   }
 }

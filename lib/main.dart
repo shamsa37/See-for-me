@@ -175,7 +175,7 @@ import 'package:project/HomeScreen.dart';
 import 'package:project/LoginScreen.dart';
 import 'package:project/RegistrationScreen.dart';
 import 'package:project/BlindDashboardScreen.dart';
-import 'package:project/sos_screen.dart';
+import 'package:project/sos_screen.dart'; // File import
 import 'package:project/EmergencyScreen.dart';
 import 'package:project/EmergencyHelp.dart';
 import 'package:project/OfflineScreen.dart';
@@ -231,8 +231,6 @@ class MyApp extends StatelessWidget {
         ),
       ),
 
-      home: const WrapperScreen(),
-
       onGenerateRoute: (settings) {
         WidgetBuilder builder;
 
@@ -250,7 +248,7 @@ class MyApp extends StatelessWidget {
             builder = (_) => BlindDashboardScreen();
             break;
           case '/sos':
-            builder = (_) => const sos_screen();
+            builder = (_) => const SosScreen(); // 👈 Fixed here: sos_screen to SosScreen
             break;
           case '/callVolunteer':
             builder = (_) => CallVolunteerScreen();

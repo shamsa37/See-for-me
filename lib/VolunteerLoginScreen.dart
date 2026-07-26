@@ -447,7 +447,8 @@ import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:project/VolunteerDashboard.dart';
 import 'package:project/VolunteerRegScreen.dart';
-import 'package:project/ForgotPasswordScreen.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:google_sign_in/google_sign_in.dart';
 
 class VolunteerLoginScreen extends StatefulWidget {
   const VolunteerLoginScreen({super.key});
@@ -462,7 +463,9 @@ class _VolunteerLoginScreenState extends State<VolunteerLoginScreen> {
   final _formKey = GlobalKey<FormState>();
 
   bool isLoading = false;
+  final GoogleSignIn _googleSignIn = GoogleSignIn();
 
+  // ================= LOGIN =================
   void _login() async {
     String email = emailController.text.trim();
     String password = passwordController.text.trim();
@@ -479,33 +482,94 @@ class _VolunteerLoginScreenState extends State<VolunteerLoginScreen> {
 
     setState(() => isLoading = true);
 
-    // 🔥 Fake delay (simulate login)..
-    await Future.delayed(const Duration(seconds: 2));
+    try {
+      await FirebaseAuth.instance.signInWithEmailAndPassword(
+        email: email,
+        password: password,
+      );
 
-    if (!mounted) return;
+      if (!mounted) return;
 
-    Navigator.pushReplacement(
-      context,
-      MaterialPageRoute(builder: (_) => VolunteerDashboard()),
-    );
+      Navigator.pushReplacement(
+        context,
+        MaterialPageRoute(builder: (_) => const VolunteerDashboard()),
+      );
+    } on FirebaseAuthException catch (e) {
+      String msg = "Login failed";
 
-    setState(() => isLoading = false);
+      if (e.code == "user-not-found") {
+        msg = "No user found";
+      } else if (e.code == "wrong-password") {
+        msg = "Wrong password";
+      } else if (e.code == "invalid-email") {
+        msg = "Invalid email";
+      }
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(msg), backgroundColor: Colors.red),
+      );
+    } finally {
+      if (mounted) setState(() => isLoading = false);
+    }
   }
 
-  void _handleGoogleSignIn() async {
-    setState(() => isLoading = true);
+  // ================= GOOGLE SIGN-IN =================
+  Future<void> _handleGoogleSignIn() async {
+    try {
+      setState(() => isLoading = true);
 
-    // 🔥 Fake Google login
-    await Future.delayed(const Duration(seconds: 2));
+      final googleUser = await _googleSignIn.signIn();
+      if (googleUser == null) return;
 
-    if (!mounted) return;
+      final googleAuth = await googleUser.authentication;
 
-    Navigator.pushReplacement(
-      context,
-      MaterialPageRoute(builder: (_) => VolunteerDashboard()),
-    );
+      final credential = GoogleAuthProvider.credential(
+        accessToken: googleAuth.accessToken,
+        idToken: googleAuth.idToken,
+      );
 
-    setState(() => isLoading = false);
+      await FirebaseAuth.instance.signInWithCredential(credential);
+
+      if (!mounted) return;
+
+      Navigator.pushReplacement(
+        context,
+        MaterialPageRoute(builder: (_) => const VolunteerDashboard()),
+      );
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text("Google Sign-in failed: $e")),
+      );
+    } finally {
+      if (mounted) setState(() => isLoading = false);
+    }
+  }
+
+  // ================= FORGOT PASSWORD =================
+  void _resetPassword() async {
+    String email = emailController.text.trim();
+
+    if (email.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text("Enter email first")),
+      );
+      return;
+    }
+
+    try {
+      await FirebaseAuth.instance.sendPasswordResetEmail(email: email);
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text("Password reset link sent"),
+          backgroundColor: Colors.green,
+        ),
+      );
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text("Error: $e")),
+      );
+    }
   }
 
   @override
@@ -556,13 +620,6 @@ class _VolunteerLoginScreenState extends State<VolunteerLoginScreen> {
                       color: const Color(0xFF8000FF).withOpacity(0.5),
                       width: 1.8,
                     ),
-                    boxShadow: [
-                      BoxShadow(
-                        color: const Color(0xFF8000FF).withOpacity(0.25),
-                        blurRadius: 20,
-                        offset: const Offset(0, 8),
-                      ),
-                    ],
                   ),
                   child: Form(
                     key: _formKey,
@@ -577,6 +634,7 @@ class _VolunteerLoginScreenState extends State<VolunteerLoginScreen> {
                             fontWeight: FontWeight.bold,
                           ),
                         ),
+
                         const SizedBox(height: 30),
 
                         _buildTextField(
@@ -596,16 +654,9 @@ class _VolunteerLoginScreenState extends State<VolunteerLoginScreen> {
 
                         const SizedBox(height: 15),
 
+                        // ================= FORGOT PASSWORD =================
                         GestureDetector(
-                          onTap: () {
-                            Navigator.push(
-                              context,
-                              MaterialPageRoute(
-                                builder: (context) =>
-                                    ForgotPasswordScreen(),
-                              ),
-                            );
-                          },
+                          onTap: _resetPassword,
                           child: const Text(
                             "Forgot Password?",
                             style: TextStyle(
@@ -619,38 +670,21 @@ class _VolunteerLoginScreenState extends State<VolunteerLoginScreen> {
                         const SizedBox(height: 25),
 
                         if (isLoading)
-                          const Padding(
-                            padding: EdgeInsets.only(bottom: 15),
-                            child: CircularProgressIndicator(
-                              color: Color(0xFF8000FF),
-                            ),
+                          const CircularProgressIndicator(
+                            color: Color(0xFF8000FF),
                           ),
 
-                        Container(
+                        const SizedBox(height: 10),
+
+                        // ================= LOGIN BUTTON =================
+                        SizedBox(
                           width: double.infinity,
-                          decoration: BoxDecoration(
-                            borderRadius: BorderRadius.circular(15),
-                            gradient: const LinearGradient(
-                              colors: [
-                                Color(0xFF8000FF),
-                                Color(0xFF570A57)
-                              ],
-                            ),
-                          ),
                           child: ElevatedButton(
                             style: ElevatedButton.styleFrom(
-                              backgroundColor: Colors.transparent,
-                              shadowColor: Colors.transparent,
-                              padding:
-                              const EdgeInsets.symmetric(vertical: 16),
+                              backgroundColor: const Color(0xFF8000FF),
+                              padding: const EdgeInsets.symmetric(vertical: 16),
                             ),
-                            onPressed: isLoading
-                                ? null
-                                : () {
-                              if (_formKey.currentState!.validate()) {
-                                _login();
-                              }
-                            },
+                            onPressed: isLoading ? null : _login,
                             child: const Text(
                               "Login",
                               style: TextStyle(
@@ -664,77 +698,38 @@ class _VolunteerLoginScreenState extends State<VolunteerLoginScreen> {
 
                         const SizedBox(height: 25),
 
-                        Row(
-                          children: const [
-                            Expanded(child: Divider(color: Colors.white24)),
-                            Padding(
-                              padding: EdgeInsets.symmetric(horizontal: 10),
-                              child: Text("OR",
-                                  style: TextStyle(color: Colors.white54)),
-                            ),
-                            Expanded(child: Divider(color: Colors.white24)),
-                          ],
-                        ),
+                        const Text("OR",
+                            style: TextStyle(color: Colors.white54)),
 
                         const SizedBox(height: 20),
 
-                        Row(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            GestureDetector(
-                              onTap:
-                              isLoading ? null : _handleGoogleSignIn,
-                              child: Container(
-                                padding: const EdgeInsets.all(14),
-                                decoration: const BoxDecoration(
-                                  shape: BoxShape.circle,
-                                  color: Colors.white,
-                                ),
-                                child: const Icon(Icons.g_mobiledata,
-                                    size: 30, color: Colors.black),
-                              ),
+                        GestureDetector(
+                          onTap: isLoading ? null : _handleGoogleSignIn,
+                          child: Container(
+                            padding: const EdgeInsets.all(14),
+                            decoration: const BoxDecoration(
+                              shape: BoxShape.circle,
+                              color: Colors.white,
                             ),
-
-                            const SizedBox(width: 25),
-
-                            GestureDetector(
-                              onTap: isLoading
-                                  ? null
-                                  : () {
-                                if (_formKey.currentState!
-                                    .validate()) {
-                                  _login();
-                                }
-                              },
-                              child: Container(
-                                padding: const EdgeInsets.all(14),
-                                decoration: const BoxDecoration(
-                                  shape: BoxShape.circle,
-                                  color: Color(0xFF8000FF),
-                                ),
-                                child: const Icon(
-                                  Icons.email,
-                                  color: Colors.white,
-                                  size: 26,
-                                ),
-                              ),
+                            child: const Icon(
+                              Icons.g_mobiledata,
+                              size: 30,
+                              color: Colors.black,
                             ),
-                          ],
+                          ),
                         ),
 
                         const SizedBox(height: 25),
 
                         GestureDetector(
                           onTap: () {
-                            if (!isLoading) {
-                              Navigator.push(
-                                context,
-                                MaterialPageRoute(
-                                  builder: (context) =>
-                                      VolunteerRegScreen(),
-                                ),
-                              );
-                            }
+                            Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (context) =>
+                                const VolunteerRegScreen(),
+                              ),
+                            );
                           },
                           child: const Text.rich(
                             TextSpan(
@@ -773,21 +768,6 @@ class _VolunteerLoginScreenState extends State<VolunteerLoginScreen> {
     return TextFormField(
       controller: controller,
       obscureText: isPassword,
-      validator: (value) {
-        if (value == null || value.isEmpty) {
-          return "$hint is required";
-        }
-
-        if (hint == "Email" && !value.contains("@")) {
-          return "Enter valid email";
-        }
-
-        if (hint == "Password" && value.length < 6) {
-          return "Password must be at least 6 characters";
-        }
-
-        return null;
-      },
       style: const TextStyle(color: Colors.white),
       decoration: InputDecoration(
         prefixIcon: Icon(icon, color: const Color(0xFF8000FF)),
@@ -795,15 +775,9 @@ class _VolunteerLoginScreenState extends State<VolunteerLoginScreen> {
         hintStyle: TextStyle(color: Colors.white.withOpacity(0.7)),
         filled: true,
         fillColor: Colors.white.withOpacity(0.08),
-        enabledBorder: OutlineInputBorder(
+        border: OutlineInputBorder(
           borderRadius: BorderRadius.circular(15),
-          borderSide: BorderSide(
-              color: const Color(0xFF8000FF).withOpacity(0.3)),
-        ),
-        focusedBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(15),
-          borderSide:
-          const BorderSide(color: Color(0xFF8000FF), width: 2),
+          borderSide: BorderSide.none,
         ),
       ),
     );

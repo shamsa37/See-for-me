@@ -1,146 +1,39 @@
-//
-// import 'package:cloud_firestore/cloud_firestore.dart';
-//
-// class SessionService {
-//   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
-//
-//   // ================= CREATE SESSION =================
-//   Future<String> createSession(String userId) async {
-//     DocumentReference doc = await _firestore
-//         .collection('sessions')
-//         .add({
-//       'userId': userId,
-//       'volunteerId': null,
-//       'status': 'idle', // idle, waiting, active, ended
-//       'callId': null,
-//       'createdAt': FieldValue.serverTimestamp(),
-//     });
-//
-//     return doc.id;
-//   }
-//
-//   // ================= START CALL =================
-//   Future<void> startCall(String sessionId, String callId) async {
-//     await _firestore.collection('sessions').doc(sessionId).update({
-//       'status': 'waiting',
-//       'callId': callId,
-//       'updatedAt': FieldValue.serverTimestamp(),
-//     });
-//
-//     // 🔥 ALSO CREATE CALL TRACKING
-//     await _firestore.collection('calls').doc(callId).set({
-//       'sessionId': sessionId,
-//       'status': 'calling',
-//       'createdAt': FieldValue.serverTimestamp(),
-//     });
-//   }
-//
-//   // ================= ACCEPT CALL =================
-//   Future<void> acceptCall(String sessionId, String volunteerId) async {
-//     await _firestore.collection('sessions').doc(sessionId).update({
-//       'status': 'active',
-//       'volunteerId': volunteerId,
-//       'acceptedAt': FieldValue.serverTimestamp(),
-//     });
-//   }
-//
-//   // ================= END CALL =================
-//   Future<void> endCall(String sessionId) async {
-//     await _firestore.collection('sessions').doc(sessionId).update({
-//       'status': 'ended',
-//       'endedAt': FieldValue.serverTimestamp(),
-//     });
-//   }
-// }
-
 import 'package:cloud_firestore/cloud_firestore.dart';
 
 class SessionService {
-  final FirebaseFirestore _firestore = FirebaseFirestore.instance;
+  final FirebaseFirestore _db = FirebaseFirestore.instance;
 
-  // ================= CREATE SESSION =================
-  Future<String> createSession(String userId) async {
-    DocumentReference doc =
-    await _firestore.collection('sessions').add({
+  CollectionReference<Map<String, dynamic>> get _sessions =>
+      _db.collection('sessions');
+
+  /// Create session after volunteer accepts request
+  Future<String> createSession({
+    required String requestId,
+    required String userId,
+    required String volunteerId,
+  }) async {
+    final doc = await _sessions.add({
+      'requestId': requestId,
       'userId': userId,
-      'volunteerId': null,
-      'status': 'idle', // idle, ringing, active, ended
+      'volunteerId': volunteerId,
+      'status': 'active',
       'createdAt': FieldValue.serverTimestamp(),
     });
 
     return doc.id;
   }
 
-  // ================= SET OFFER =================
-  Future<void> setOffer(
-      String sessionId, Map<String, dynamic> offer) async {
-    await _firestore.collection('sessions').doc(sessionId).update({
-      'offer': {
-        'type': offer['type'],
-        'sdp': offer['sdp'],
-      },
-      'status': 'ringing',
-    });
+  /// Listen to a session
+  Stream<DocumentSnapshot<Map<String, dynamic>>> streamSession(
+      String sessionId) {
+    return _sessions.doc(sessionId).snapshots();
   }
 
-  // ================= SET ANSWER =================
-  Future<void> setAnswer(
-      String sessionId, Map<String, dynamic> answer) async {
-    await _firestore.collection('sessions').doc(sessionId).update({
-      'answer': {
-        'type': answer['type'],
-        'sdp': answer['sdp'],
-      },
-      'status': 'active',
-    });
-  }
-
-  // ================= ADD ICE CANDIDATE ===================
-  Future<void> addCandidate(
-      String sessionId,
-      String role, // callerCandidates / calleeCandidates
-      Map<String, dynamic> candidate,
-      ) async {
-    await _firestore
-        .collection('sessions')
-        .doc(sessionId)
-        .collection(role)
-        .add({
-      'candidate': candidate['candidate'],
-      'sdpMid': candidate['sdpMid'],
-      'sdpMLineIndex': candidate['sdpMLineIndex'],
-      'createdAt': FieldValue.serverTimestamp(),
-    });
-  }
-
-  // ================= START CALL =================
-  Future<void> startCall(String sessionId, String volunteerId) async {
-    await _firestore.collection('sessions').doc(sessionId).update({
-      'status': 'ringing',
-      'volunteerId': volunteerId,
-      'updatedAt': FieldValue.serverTimestamp(),
-    });
-  }
-
-  // ================= ACCEPT CALL =================
-  Future<void> acceptCall(String sessionId, String volunteerId) async {
-    await _firestore.collection('sessions').doc(sessionId).update({
-      'status': 'active',
-      'volunteerId': volunteerId,
-      'acceptedAt': FieldValue.serverTimestamp(),
-    });
-  }
-
-  // ================= END CALL =================
-  Future<void> endCall(String sessionId) async {
-    await _firestore.collection('sessions').doc(sessionId).update({
+  /// End session
+  Future<void> endSession(String sessionId) async {
+    await _sessions.doc(sessionId).update({
       'status': 'ended',
       'endedAt': FieldValue.serverTimestamp(),
     });
-  }
-
-  // ================= LISTEN SESSION (IMPORTANT) =================
-  Stream<DocumentSnapshot> listenSession(String sessionId) {
-    return _firestore.collection('sessions').doc(sessionId).snapshots();
   }
 }

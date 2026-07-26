@@ -1,11 +1,14 @@
+//
+//
+//
+// import 'dart:async';
 // import 'package:flutter/material.dart';
 // import 'package:flutter_tts/flutter_tts.dart';
 // import 'package:speech_to_text/speech_to_text.dart' as stt;
 // import 'package:permission_handler/permission_handler.dart';
-// import 'package:shared_preferences/shared_preferences.dart';
-// import 'dart:convert';
+// import 'package:cloud_firestore/cloud_firestore.dart';
+// import 'package:firebase_auth/firebase_auth.dart';
 //
-// // ✅ Imports for extra screens
 // import 'AddContactScreen.dart';
 // import 'CallBlind.dart';
 // import 'EmergencyVideoCallScreen.dart';
@@ -21,8 +24,11 @@
 //   final FlutterTts flutterTts = FlutterTts();
 //   final stt.SpeechToText speech = stt.SpeechToText();
 //
-//   int _selectedIndex = 0; // for bottom navigation
-//   List<Map<String, String>> contacts = [];
+//   int _selectedIndex = 0;
+//   List<Map<String, dynamic>> contacts = [];
+//   bool isLoading = true;
+//
+//   String? get currentUid => FirebaseAuth.instance.currentUser?.uid;
 //
 //   @override
 //   void initState() {
@@ -32,130 +38,160 @@
 //
 //   Future<void> _initSetup() async {
 //     await _requestMicPermission();
-//     await _loadContacts();
+//     await _loadConnectedFamilyContacts();
 //     await flutterTts.speak(
-//         "Voice SOS mode active. Speak contact name or say add contact");
-//   }
-//
-//   Future<void> _loadContacts() async {
-//     final prefs = await SharedPreferences.getInstance();
-//     final savedData = prefs.getString('contacts');
-//
-//     if (savedData != null) {
-//       try {
-//         final decoded = jsonDecode(savedData);
-//         if (decoded is List) {
-//           setState(() {
-//             contacts = decoded.map((e) => Map<String, String>.from(e)).toList();
-//           });
-//         }
-//       } catch (e) {
-//         debugPrint("Error decoding contacts: $e");
-//       }
-//     } else {
-//       // Default demo contacts
-//       setState(() {
-//         contacts = [
-//           {'name': 'MOM', 'number': '0300-1234567'},
-//           {'name': 'BROTHER', 'number': '0301-2345678'},
-//           {'name': 'SISTER', 'number': '0302-3456789'},
-//           {'name': 'FATHER', 'number': '0303-4567890'},
-//           {'name': 'FRIEND ALIZAY', 'number': '0304-5678901'},
-//           {'name': 'FRIEND HARAM', 'number': '0305-6789012'},
-//         ];
-//       });
-//     }
+//         "Voice S O S mode active. Speak contact name or say add contact");
 //   }
 //
 //   Future<void> _requestMicPermission() async {
 //     final status = await Permission.microphone.request();
 //     if (status.isDenied || status.isPermanentlyDenied) {
-//       await flutterTts.speak("Microphone permission denied");
+//       await flutterTts.speak("Microphone permission denied. Please allow it from settings.");
 //     }
 //   }
 //
-//   // ✅ Open the correct screen on icon tap
-//   Future<void> _handleAction(String action, Map<String, String> contact) async {
-//     switch (action) {
-//       case 'call':
+//   Future<void> _loadConnectedFamilyContacts() async {
+//     if (currentUid == null) return;
+//
+//     setState(() => isLoading = true);
+//
+//     try {
+//       final querySnapshot = await FirebaseFirestore.instance
+//           .collection('connections')
+//           .where('blindUserId', isEqualTo: currentUid)
+//           .where('status', isEqualTo: 'accepted')
+//           .get();
+//
+//       List<Map<String, dynamic>> tempContacts = [];
+//
+//       for (var doc in querySnapshot.docs) {
+//         String familyId = doc['familyMemberId'];
+//
+//         final userDoc = await FirebaseFirestore.instance
+//             .collection('users')
+//             .doc(familyId)
+//             .get();
+//
+//         if (userDoc.exists) {
+//           tempContacts.add({
+//             'uid': familyId,
+//             'name': userDoc.data()?['name'] ?? 'Family Member',
+//             'email': userDoc.data()?['email'] ?? '',
+//             'phone': userDoc.data()?['phone'] ?? 'No Number',
+//           });
+//         }
+//       }
+//
+//       setState(() {
+//         contacts = tempContacts;
+//         isLoading = false;
+//       });
+//
+//       if (contacts.isEmpty) {
+//         await flutterTts.speak("No family contacts added yet. Please use add contact button.");
+//       }
+//     } catch (e) {
+//       debugPrint("Load Contacts Error: $e");
+//       setState(() => isLoading = false);
+//       await flutterTts.speak("Failed to load contacts");
+//     }
+//   }
+//
+//   Future<void> _handleAction(String action, Map<String, dynamic> contact) async {
+//     if (currentUid == null) return;
+//
+//     try {
+//       if (action == 'call') {
 //         await flutterTts.speak("Calling ${contact['name']}");
+//       } else {
+//         await flutterTts.speak("Starting video call with ${contact['name']}");
+//       }
+//
+//       // Save alert in Firestore
+//       await FirebaseFirestore.instance.collection('alerts').add({
+//         'blindUserId': currentUid,
+//         'familyMemberId': contact['uid'],
+//         'action_type': action,
+//         'status': 'triggered',
+//         'timestamp': FieldValue.serverTimestamp(),
+//       });
+//
+//       // Navigate to respective screen
+//       if (action == 'call') {
 //         Navigator.push(
 //           context,
 //           MaterialPageRoute(
 //             builder: (context) => CallBlind(
-//               contactName: contact['name']!,
-//               contactNumber: contact['number']!,
+//               contactName: contact['name'].toString(),
+//               contactNumber: contact['phone'].toString(),
 //             ),
 //           ),
 //         );
-//         break;
-//       case 'video':
-//         await flutterTts.speak("Starting video call with ${contact['name']}");
+//       } else if (action == 'video') {
 //         Navigator.push(
 //           context,
 //           MaterialPageRoute(
 //             builder: (context) => EmergencyVideoCallScreen(
-//               contactName: contact['name']!,
-//               contactNumber: contact['number']!,
+//               contactName: contact['name'].toString(),
+//               contactNumber: contact['phone'].toString(),
 //             ),
 //           ),
 //         );
-//         break;
+//       }
+//     } catch (e) {
+//       print("❌ SOS Trigger Error: $e");
+//       await flutterTts.speak("Failed to trigger emergency alert");
 //     }
 //   }
 //
-//   // ✅ SOS Contacts List UI (top text removed)
 //   Widget _buildSOSMain() {
-//     return Column(
-//       children: [
-//         Expanded(
-//           child: ListView.builder(
-//             itemCount: contacts.length,
-//             itemBuilder: (context, index) {
-//               final contact = contacts[index];
-//               return Card(
-//                 color: Colors.white,
-//                 margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-//                 child: ListTile(
-//                   title: Text(
-//                     contact['name'] ?? '',
-//                     style: const TextStyle(
-//                         fontWeight: FontWeight.bold, fontSize: 17),
-//                   ),
-//                   subtitle: Text(contact['number'] ?? ''),
-//                   trailing: Wrap(
-//                     spacing: 10,
-//                     children: [
-//                       IconButton(
-//                         icon: const Icon(Icons.call, color: Colors.green),
-//                         onPressed: () => _handleAction('call', contact),
-//                       ),
-//                       IconButton(
-//                         icon: const Icon(Icons.videocam, color: Colors.blue),
-//                         onPressed: () => _handleAction('video', contact),
-//                       ),
-//                     ],
-//                   ),
-//                 ),
-//               );
-//             },
-//           ),
+//     if (isLoading) {
+//       return const Center(child: CircularProgressIndicator(color: Colors.purple));
+//     }
+//
+//     if (contacts.isEmpty) {
+//       return const Center(
+//         child: Text(
+//           "No verified family contacts.\nUse 'Add Contact' to request connection.",
+//           textAlign: TextAlign.center,
+//           style: TextStyle(fontSize: 16, color: Colors.grey),
 //         ),
-//       ],
+//       );
+//     }
+//
+//     return ListView.builder(
+//       padding: const EdgeInsets.all(12),
+//       itemCount: contacts.length,
+//       itemBuilder: (context, index) {
+//         final contact = contacts[index];
+//         return Card(
+//           color: Colors.white,
+//           margin: const EdgeInsets.symmetric(vertical: 6),
+//           child: ListTile(
+//             title: Text(
+//               contact['name'] ?? '',
+//               style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 17),
+//             ),
+//             subtitle: Text(contact['phone'] ?? ''),
+//             trailing: Wrap(
+//               spacing: 8,
+//               children: [
+//                 IconButton(
+//                   icon: const Icon(Icons.call, color: Colors.green),
+//                   onPressed: () => _handleAction('call', contact),
+//                 ),
+//                 IconButton(
+//                   icon: const Icon(Icons.videocam, color: Colors.blue),
+//                   onPressed: () => _handleAction('video', contact),
+//                 ),
+//               ],
+//             ),
+//           ),
+//         );
+//       },
 //     );
 //   }
 //
-//   // ✅ Select body based on bottom navigation
-//   Widget _getSelectedScreen() {
-//     switch (_selectedIndex) {
-//       case 1:
-//         return AddContactScreen();
-//       default:
-//         return _buildSOSMain();
-//     }
-//   }
-//
-//   // ✅ Bottom navigation bar
 //   Widget _buildBottomNavBar() {
 //     return BottomNavigationBar(
 //       currentIndex: _selectedIndex,
@@ -164,277 +200,332 @@
 //       unselectedItemColor: Colors.grey,
 //       onTap: (index) {
 //         setState(() => _selectedIndex = index);
-//         switch (index) {
-//           case 0:
-//             flutterTts.speak("SOS main screen opened");
-//             break;
-//           case 1:
-//             flutterTts.speak("Add contact screen opened");
-//             break;
+//         if (index == 0) {
+//           flutterTts.speak("SOS main screen opened");
+//           _loadConnectedFamilyContacts();
+//         } else if (index == 1) {
+//           flutterTts.speak("Add contact screen opened");
 //         }
 //       },
 //       items: const [
-//         BottomNavigationBarItem(
-//           icon: Icon(Icons.sos),
-//           label: 'SOS',
-//         ),
-//         BottomNavigationBarItem(
-//           icon: Icon(Icons.person_add),
-//           label: 'Add Contact',
-//         ),
+//         BottomNavigationBarItem(icon: Icon(Icons.sos), label: 'SOS'),
+//         BottomNavigationBarItem(icon: Icon(Icons.person_add), label: 'Add Contact'),
 //       ],
 //     );
 //   }
 //
 //   @override
 //   Widget build(BuildContext context) {
-//     final titles = ["SOS", "Add Contact"];
 //     return Scaffold(
 //       appBar: AppBar(
-//         automaticallyImplyLeading: false, // ✅ removes back arrow
-//         title: Text(titles[_selectedIndex]),
+//         automaticallyImplyLeading: false,
+//         title: Text(_selectedIndex == 0 ? "SOS" : "Add Contact"),
 //         centerTitle: true,
 //         backgroundColor: Colors.purple,
 //         foregroundColor: Colors.white,
 //       ),
 //       body: Container(
 //         color: const Color(0xFFF3E5F5),
-//         child: _getSelectedScreen(),
+//         child: _selectedIndex == 0 ? _buildSOSMain() : AddContactScreen(),
 //       ),
 //       bottomNavigationBar: _buildBottomNavBar(),
 //     );
 //   }
 // }
-//
-//
-
 
 import 'package:flutter/material.dart';
-import 'package:flutter_tts/flutter_tts.dart';
-import 'package:speech_to_text/speech_to_text.dart' as stt;
-import 'package:permission_handler/permission_handler.dart';
-import 'package:cloud_firestore/cloud_firestore.dart'; // Add
-import 'package:firebase_auth/firebase_auth.dart'; // Add
-import 'dart:convert';
-
-// ✅ Imports for extra screens
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:url_launcher/url_launcher.dart';
 import 'AddContactScreen.dart';
-import 'CallBlind.dart';
-import 'EmergencyVideoCallScreen.dart';
 
-class sos_screen extends StatefulWidget {
-  const sos_screen({super.key});
+class SosScreen extends StatefulWidget {
+  const SosScreen({Key? key}) : super(key: key);
 
   @override
-  State<sos_screen> createState() => _sos_screenState();
+  State<SosScreen> createState() => _SosScreenState();
 }
 
-class _sos_screenState extends State<sos_screen> {
-  final FlutterTts flutterTts = FlutterTts();
-  final stt.SpeechToText speech = stt.SpeechToText();
+class _SosScreenState extends State<SosScreen> {
+  String? get currentUserId => FirebaseAuth.instance.currentUser?.uid;
 
-  int _selectedIndex = 0;
-  List<Map<String, String>> contacts = [];
+  // Direct Emergency Phone Call Logic
+  Future<void> _makePhoneCall(String phoneNumber) async {
+    if (phoneNumber.isEmpty) return;
 
-  @override
-  void initState() {
-    super.initState();
-    _initSetup();
+    final Uri launchUri = Uri(scheme: 'tel', path: phoneNumber);
+    if (await canLaunchUrl(launchUri)) {
+      await launchUrl(launchUri);
+    } else {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Could not launch phone dialer'),
+            backgroundColor: Colors.redAccent,
+          ),
+        );
+      }
+    }
   }
 
-  // UID Getter
-  String? get currentUid => FirebaseAuth.instance.currentUser?.uid;
-
-  Future<void> _initSetup() async {
-    await _requestMicPermission();
-    await _loadContacts();
-    await flutterTts.speak(
-        "Voice SOS mode active. Speak contact name or say add contact");
+  // 📹 Video Call Trigger Logic
+  void _startVideoCall(String name, String phone) {
+    // Aap yahan apni CallScreen par data pass kar sakte hain
+    Navigator.pushNamed(
+      context,
+      '/videoCall',
+      arguments: {'name': name, 'phone': phone},
+    );
   }
 
-  // Updated: Load from Firestore instead of just SharedPreferences
-  Future<void> _loadContacts() async {
-    if (currentUid == null) return;
-
+  // Delete Contact from Firestore sub-collection
+  Future<void> _deleteContact(String docId) async {
+    if (currentUserId == null) return;
     try {
-      final snapshot = await FirebaseFirestore.instance
-          .collection('blind')
-          .doc(currentUid)
-          .collection('sos_contacts')
-          .get();
+      await FirebaseFirestore.instance
+          .collection('users')
+          .doc(currentUserId)
+          .collection('sos')
+          .doc('default')
+          .collection('contacts')
+          .doc(docId)
+          .delete();
 
-      if (snapshot.docs.isNotEmpty) {
-        setState(() {
-          contacts = snapshot.docs.map((doc) => {
-            'name': doc['name'].toString(),
-            'number': doc['number'].toString(),
-          }).toList();
-        });
-      } else {
-        // Default demo contacts agar firestore khali ho
-        setState(() {
-          contacts = [
-            {'name': 'MOM', 'number': '0300-1234567'},
-            {'name': 'BROTHER', 'number': '0301-2345678'},
-            {'name': 'SISTER', 'number': '0302-3456789'},
-            {'name': 'FATHER', 'number': '0303-4567890'},
-          ];
-        });
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Contact Removed'),
+            backgroundColor: Colors.orange,
+          ),
+        );
       }
     } catch (e) {
-      debugPrint("Load Error: $e");
+      debugPrint("Delete error: $e");
     }
-  }
-
-  Future<void> _requestMicPermission() async {
-    final status = await Permission.microphone.request();
-    if (status.isDenied || status.isPermanentlyDenied) {
-      await flutterTts.speak("Microphone permission denied");
-    }
-  }
-
-  // ✅ ACTION HANDLER (Modified for Firestore Logging)
-  Future<void> _handleAction(String action, Map<String, String> contact) async {
-    // 1. Firestore Entry (Pehalay data save hoga)
-    if (currentUid != null) {
-      try {
-        await FirebaseFirestore.instance
-            .collection('blind')
-            .doc(currentUid)
-            .collection('sos_logs')
-            .add({
-          'contact_name': contact['name'],
-          'contact_number': contact['number'],
-          'action_type': action, // call ya video
-          'status': 'triggered',
-          'timestamp': FieldValue.serverTimestamp(),
-        });
-        print("✅ SOS Log recorded in Firestore");
-      } catch (e) {
-        print("❌ Firestore Log Error: $e");
-      }
-    }
-
-    // 2. Navigation (Baaki logic wahi hai)
-    switch (action) {
-      case 'call':
-        await flutterTts.speak("Calling ${contact['name']}");
-        Navigator.push(
-          context,
-          MaterialPageRoute(
-            builder: (context) => CallBlind(
-              contactName: contact['name']!,
-              contactNumber: contact['number']!,
-            ),
-          ),
-        );
-        break;
-      case 'video':
-        await flutterTts.speak("Starting video call with ${contact['name']}");
-        Navigator.push(
-          context,
-          MaterialPageRoute(
-            builder: (context) => EmergencyVideoCallScreen(
-              contactName: contact['name']!,
-              contactNumber: contact['number']!,
-            ),
-          ),
-        );
-        break;
-    }
-  }
-
-  // ✅ SOS Main UI (Aapka original UI)
-  Widget _buildSOSMain() {
-    return Column(
-      children: [
-        Expanded(
-          child: ListView.builder(
-            itemCount: contacts.length,
-            itemBuilder: (context, index) {
-              final contact = contacts[index];
-              return Card(
-                color: Colors.white,
-                margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                child: ListTile(
-                  title: Text(
-                    contact['name'] ?? '',
-                    style: const TextStyle(
-                        fontWeight: FontWeight.bold, fontSize: 17),
-                  ),
-                  subtitle: Text(contact['number'] ?? ''),
-                  trailing: Wrap(
-                    spacing: 10,
-                    children: [
-                      IconButton(
-                        icon: const Icon(Icons.call, color: Colors.green),
-                        onPressed: () => _handleAction('call', contact),
-                      ),
-                      IconButton(
-                        icon: const Icon(Icons.videocam, color: Colors.blue),
-                        onPressed: () => _handleAction('video', contact),
-                      ),
-                    ],
-                  ),
-                ),
-              );
-            },
-          ),
-        ),
-      ],
-    );
-  }
-
-  Widget _getSelectedScreen() {
-    switch (_selectedIndex) {
-      case 1:
-        return AddContactScreen();
-      default:
-        return _buildSOSMain();
-    }
-  }
-
-  Widget _buildBottomNavBar() {
-    return BottomNavigationBar(
-      currentIndex: _selectedIndex,
-      backgroundColor: Colors.white,
-      selectedItemColor: Colors.purple,
-      unselectedItemColor: Colors.grey,
-      onTap: (index) {
-        setState(() => _selectedIndex = index);
-        switch (index) {
-          case 0:
-            flutterTts.speak("SOS main screen opened");
-            _loadContacts(); // Refresh data when back
-            break;
-          case 1:
-            flutterTts.speak("Add contact screen opened");
-            break;
-        }
-      },
-      items: const [
-        BottomNavigationBarItem(icon: Icon(Icons.sos), label: 'SOS'),
-        BottomNavigationBarItem(icon: Icon(Icons.person_add), label: 'Add Contact'),
-      ],
-    );
   }
 
   @override
   Widget build(BuildContext context) {
-    // Top Bar (AppBar) ko fix rakha hai
     return Scaffold(
+      extendBodyBehindAppBar: true,
       appBar: AppBar(
-        automaticallyImplyLeading: false,
-        title: Text(_selectedIndex == 0 ? "SOS" : "Add Contact"),
-        centerTitle: true,
-        backgroundColor: Colors.purple,
-        foregroundColor: Colors.white,
+        title: const Text(
+          'Emergency SOS',
+          style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+        ),
+        backgroundColor: Colors.transparent,
+        elevation: 0,
+        iconTheme: const IconThemeData(color: Colors.white),
+      ),
+      floatingActionButton: FloatingActionButton.extended(
+        backgroundColor: Colors.purpleAccent,
+        icon: const Icon(Icons.person_add, color: Colors.white),
+        label: const Text(
+          'Add SOS Contact',
+          style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+        ),
+        onPressed: () {
+          Navigator.push(
+            context,
+            MaterialPageRoute(builder: (_) => const AddContactScreen()),
+          );
+        },
       ),
       body: Container(
-        color: const Color(0xFFF3E5F5),
-        child: _getSelectedScreen(),
+        decoration: const BoxDecoration(
+          gradient: LinearGradient(
+            colors: [Color(0xFF0F051D), Color(0xFF23083B), Color(0xFF43166B)],
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+          ),
+        ),
+        child: SafeArea(
+          child: Column(
+            children: [
+              const SizedBox(height: 10),
+
+              // Top Info Banner
+              Container(
+                margin: const EdgeInsets.symmetric(horizontal: 16),
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: Colors.redAccent.withOpacity(0.15),
+                  borderRadius: BorderRadius.circular(16),
+                  border: Border.all(color: Colors.redAccent.withOpacity(0.4)),
+                ),
+                child: const Row(
+                  children: [
+                    Icon(Icons.warning_amber_rounded,
+                        color: Colors.redAccent, size: 30),
+                    SizedBox(width: 12),
+                    Expanded(
+                      child: Text(
+                        'Tap card to audio call, or use camera icon for video call emergency.',
+                        style: TextStyle(color: Colors.white, fontSize: 13),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+
+              const SizedBox(height: 16),
+
+              // Saved Contacts Stream
+              Expanded(
+                child: currentUserId == null
+                    ? const Center(
+                  child: Text('User not logged in',
+                      style: TextStyle(color: Colors.white)),
+                )
+                    : StreamBuilder<QuerySnapshot>(
+                  stream: FirebaseFirestore.instance
+                      .collection('users')
+                      .doc(currentUserId)
+                      .collection('sos')
+                      .doc('default')
+                      .collection('contacts')
+                      .orderBy('createdAt', descending: true)
+                      .snapshots(),
+                  builder: (context, snapshot) {
+                    if (snapshot.connectionState ==
+                        ConnectionState.waiting) {
+                      return const Center(
+                        child: CircularProgressIndicator(
+                            color: Colors.purpleAccent),
+                      );
+                    }
+
+                    if (!snapshot.hasData ||
+                        snapshot.data!.docs.isEmpty) {
+                      return Center(
+                        child: Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Icon(
+                              Icons.contact_phone_outlined,
+                              size: 70,
+                              color: Colors.white.withOpacity(0.3),
+                            ),
+                            const SizedBox(height: 12),
+                            const Text(
+                              'No SOS Contacts Saved Yet',
+                              style: TextStyle(
+                                  color: Colors.white70, fontSize: 16),
+                            ),
+                            const SizedBox(height: 6),
+                            const Text(
+                              'Tap "Add SOS Contact" below to save one.',
+                              style: TextStyle(
+                                  color: Colors.white38, fontSize: 12),
+                            ),
+                          ],
+                        ),
+                      );
+                    }
+
+                    var contacts = snapshot.data!.docs;
+
+                    return ListView.builder(
+                      padding: const EdgeInsets.symmetric(horizontal: 16),
+                      itemCount: contacts.length,
+                      itemBuilder: (context, index) {
+                        var doc = contacts[index];
+                        var data = doc.data() as Map<String, dynamic>;
+
+                        String name = data['name'] ?? 'Family Member';
+                        String phone = data['phone'] ?? '';
+
+                        return Container(
+                          margin: const EdgeInsets.only(bottom: 12),
+                          decoration: BoxDecoration(
+                            color: Colors.white.withOpacity(0.08),
+                            borderRadius: BorderRadius.circular(16),
+                            border: Border.all(color: Colors.white12),
+                          ),
+                          child: Material(
+                            color: Colors.transparent,
+                            child: InkWell(
+                              borderRadius: BorderRadius.circular(16),
+                              onTap: () => _makePhoneCall(phone),
+                              child: Padding(
+                                padding: const EdgeInsets.all(14),
+                                child: Row(
+                                  children: [
+                                    CircleAvatar(
+                                      backgroundColor: Colors.redAccent
+                                          .withOpacity(0.2),
+                                      child: const Icon(
+                                        Icons.family_restroom,
+                                        color: Colors.redAccent,
+                                      ),
+                                    ),
+                                    const SizedBox(width: 12),
+                                    Expanded(
+                                      child: Column(
+                                        crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                        children: [
+                                          Text(
+                                            name,
+                                            style: const TextStyle(
+                                              color: Colors.white,
+                                              fontWeight: FontWeight.bold,
+                                              fontSize: 16,
+                                            ),
+                                          ),
+                                          const SizedBox(height: 2),
+                                          Text(
+                                            phone,
+                                            style: const TextStyle(
+                                                color: Colors.white70,
+                                                fontSize: 13),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                    // 📹 Video Call Button
+                                    IconButton(
+                                      icon: const Icon(Icons.videocam,
+                                          color: Colors.purpleAccent,
+                                          size: 26),
+                                      onPressed: () =>
+                                          _startVideoCall(name, phone),
+                                      tooltip: 'Video Call',
+                                    ),
+                                    // Direct Audio Call Button
+                                    IconButton(
+                                      icon: const Icon(Icons.call,
+                                          color: Colors.greenAccent,
+                                          size: 24),
+                                      onPressed: () =>
+                                          _makePhoneCall(phone),
+                                      tooltip: 'Audio Call',
+                                    ),
+                                    // Delete Button
+                                    IconButton(
+                                      icon: const Icon(
+                                          Icons.delete_outline,
+                                          color: Colors.redAccent,
+                                          size: 20),
+                                      onPressed: () =>
+                                          _deleteContact(doc.id),
+                                      tooltip: 'Remove',
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ),
+                          ),
+                        );
+                      },
+                    );
+                  },
+                ),
+              ),
+            ],
+          ),
+        ),
       ),
-      bottomNavigationBar: _buildBottomNavBar(),
     );
   }
 }
