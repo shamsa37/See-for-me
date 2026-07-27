@@ -163,7 +163,7 @@ class AuthService {
         'username': username,
         'email': email.trim().toLowerCase(),
         'gender': gender,
-        'role': role, // blind / volunteer / family
+        'role': role,
         'isOnline': true,
         'isAvailable': role == 'volunteer',
         'createdAt': FieldValue.serverTimestamp(),
@@ -195,18 +195,17 @@ class AuthService {
 
       String role = data['role'] ?? 'blind';
 
-      // 🔥 safer navigation
       Widget screen;
 
       switch (role) {
         case 'volunteer':
-          screen = const Placeholder(); // replace with VolunteerHome()
+          screen = const Placeholder();
           break;
         case 'blind':
-          screen = const Placeholder(); // replace with BlindHome()
+          screen = const Placeholder();
           break;
         case 'family':
-          screen = const Placeholder(); // replace with FamilyHome()
+          screen = const Placeholder();
           break;
         default:
           screen = const Placeholder();
@@ -216,7 +215,6 @@ class AuthService {
         context,
         MaterialPageRoute(builder: (_) => screen),
       );
-
     } catch (e) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text(e.toString())),
@@ -227,8 +225,9 @@ class AuthService {
   // ================= USER HELPERS =================
   User? currentUser() => _auth.currentUser;
 
-  Future<DocumentSnapshot> getUserData(String uid) =>
-      _firestore.collection('users').doc(uid).get();
+  Future<DocumentSnapshot> getUserData(String uid) {
+    return _firestore.collection('users').doc(uid).get();
+  }
 
   // ================= LOGOUT =================
   Future<void> logout() async {
@@ -245,6 +244,8 @@ class AuthService {
 
   // ================= RESET PASSWORD =================
   Future<void> resetPassword(String email) async {
-    await _auth.sendPasswordResetEmail(email: email.trim().toLowerCase());
+    await _auth.sendPasswordResetEmail(
+      email: email.trim().toLowerCase(),
+    );
   }
 }
