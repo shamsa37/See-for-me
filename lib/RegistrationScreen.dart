@@ -1,9 +1,13 @@
 import 'dart:async';
+import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:speech_to_text/speech_to_text.dart' as stt;
 import 'package:flutter_tts/flutter_tts.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+
+import 'BlindDashboardScreen.dart';
+import 'LoginScreen.dart';
 
 class RegistrationScreen extends StatefulWidget {
   const RegistrationScreen({super.key});
@@ -73,22 +77,25 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
       String cleanEmail = emailController.text.trim();
       String cleanPassword = passwordController.text.trim();
 
-      UserCredential userCredential = await FirebaseAuth.instance.createUserWithEmailAndPassword(
+      UserCredential userCredential =
+      await FirebaseAuth.instance.createUserWithEmailAndPassword(
         email: cleanEmail,
         password: cleanPassword,
       );
 
       if (userCredential.user != null) {
-        // ✅ FIXED: Now saving 'name' to perfectly match FamilyDashboard expectations
-        await FirebaseFirestore.instance.collection('blind').doc(userCredential.user!.uid).set({
-          'name': usernameController.text.trim(), // Family side updates to 'name'
-          'username': usernameController.text.trim(), // Kept for safety/backward compatibility
+        // ✅ Saving 'name' and placeholder location to match FamilyDashboard
+        await FirebaseFirestore.instance
+            .collection('blind')
+            .doc(userCredential.user!.uid)
+            .set({
+          'name': usernameController.text.trim(),
+          'username': usernameController.text.trim(),
           'email': cleanEmail,
           'phone': phoneController.text.trim(),
           'gender': isMale ? 'male' : 'female',
           'uid': userCredential.user!.uid,
           'createdAt': FieldValue.serverTimestamp(),
-          // ✅ FIXED: Initializing placeholder map so dashboard never encounters full reference error
           'live_location': {
             'latitude': 0.0,
             'longitude': 0.0,
@@ -101,11 +108,11 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
         if (mounted) {
           Navigator.pushReplacement(
             context,
-            MaterialPageRoute(builder: (context) => const BlindDashboard()),
+            MaterialPageRoute(
+                builder: (context) => const BlindDashboardScreen()),
           );
         }
       }
-
     } on FirebaseAuthException catch (e) {
       await _tts.speak("Error. ${e.message}");
     } catch (e) {
@@ -125,7 +132,10 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
           usernameController.text = input;
           break;
         case 1:
-          emailController.text = input.replaceAll(" ", "").replaceAll("at", "@").replaceAll("dot", ".");
+          emailController.text = input
+              .replaceAll(" ", "")
+              .replaceAll("at", "@")
+              .replaceAll("dot", ".");
           break;
         case 2:
           phoneController.text = input.replaceAll(" ", "");
@@ -135,20 +145,25 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
           break;
         case 4:
           if (input.contains("male")) {
-            isMale = true; isFemale = false;
+            isMale = true;
+            isFemale = false;
           } else if (input.contains("female")) {
-            isFemale = true; isMale = false;
+            isFemale = true;
+            isMale = false;
           } else {
             _tts.speak("Please say male or female");
-            _listen(); return;
+            _listen();
+            return;
           }
           break;
         case 5:
           if (input.contains("register")) {
-            _registerUser(); return;
+            _registerUser();
+            return;
           } else {
             _tts.speak("Say register to finish");
-            _listen(); return;
+            _listen();
+            return;
           }
       }
 
@@ -170,12 +185,24 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
   void _speakStep() async {
     String message = "";
     switch (_currentStep) {
-      case 0: message = "Please enter your username"; break;
-      case 1: message = "Please enter your email address"; break;
-      case 2: message = "Please enter your phone number"; break;
-      case 3: message = "Please create a password. It must be at least six characters"; break;
-      case 4: message = "What is your gender? Say male or female"; break;
-      case 5: message = "Review your details and say register to complete"; break;
+      case 0:
+        message = "Please enter your username";
+        break;
+      case 1:
+        message = "Please enter your email address";
+        break;
+      case 2:
+        message = "Please enter your phone number";
+        break;
+      case 3:
+        message = "Please create a password. It must be at least six characters";
+        break;
+      case 4:
+        message = "What is your gender? Say male or female";
+        break;
+      case 5:
+        message = "Review your details and say register to complete";
+        break;
     }
     await _tts.speak(message);
     _listen();
@@ -196,41 +223,168 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
     }
   }
 
-  // ---------------- UI (UNCHANGED) ----------------
+  // ---------------- ENHANCED PROFESSIONAL UI ----------------
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       body: Container(
+        width: double.infinity,
+        height: double.infinity,
         decoration: const BoxDecoration(
-          gradient: LinearGradient(colors: [Color(0xFF7B1FA2), Color(0xFFF3E5F5)]),
+          gradient: LinearGradient(
+            colors: [
+              Color(0xFF0B0211),
+              Color(0xFF2E0249),
+              Color(0xFF570A57),
+              Color(0xFF0B0211),
+            ],
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+          ),
         ),
         child: Center(
           child: SingleChildScrollView(
-            child: Container(
-              width: 350,
-              padding: const EdgeInsets.all(20),
-              decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(12)),
-              child: Column(
-                children: [
-                  const Text("Registration", style: TextStyle(fontSize: 26, fontWeight: FontWeight.bold, color: Colors.black)),
-                  const SizedBox(height: 20),
-                  buildField("Username", usernameController),
-                  buildField("Email", emailController),
-                  buildField("Phone", phoneController),
-                  buildField("Password", passwordController, isPass: true),
-                  Row(
+            padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 40),
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(28),
+              child: BackdropFilter(
+                filter: ImageFilter.blur(sigmaX: 15, sigmaY: 15),
+                child: Container(
+                  padding: const EdgeInsets.all(28),
+                  decoration: BoxDecoration(
+                    color: Colors.black.withOpacity(0.4),
+                    borderRadius: BorderRadius.circular(28),
+                    border: Border.all(
+                      color: const Color(0xFF8000FF).withOpacity(0.4),
+                      width: 1.5,
+                    ),
+                  ),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
                     children: [
-                      Checkbox(value: isMale, onChanged: (v) => setState(() { isMale = v!; if (v) isFemale = false; })),
-                      const Text("Male", style: TextStyle(color: Colors.black)),
-                      Checkbox(value: isFemale, onChanged: (v) => setState(() { isFemale = v!; if (v) isMale = false; })),
-                      const Text("Female", style: TextStyle(color: Colors.black)),
+                      const Text(
+                        "Blind User Registration",
+                        textAlign: TextAlign.center,
+                        style: TextStyle(
+                          fontSize: 24,
+                          fontWeight: FontWeight.bold,
+                          color: Colors.white,
+                          letterSpacing: 0.5,
+                        ),
+                      ),
+                      const SizedBox(height: 25),
+
+                      buildField(Icons.person, "Username", usernameController),
+                      buildField(Icons.email, "Email", emailController),
+                      buildField(Icons.phone, "Phone", phoneController),
+                      buildField(Icons.lock, "Password", passwordController,
+                          isPass: true),
+
+                      // Gender Selection Container
+                      Container(
+                        margin: const EdgeInsets.only(bottom: 18),
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 12, vertical: 4),
+                        decoration: BoxDecoration(
+                          color: Colors.white.withOpacity(0.08),
+                          borderRadius: BorderRadius.circular(16),
+                          border: Border.all(color: Colors.white12),
+                        ),
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                          children: [
+                            Row(
+                              children: [
+                                Checkbox(
+                                  value: isMale,
+                                  activeColor: const Color(0xFF8000FF),
+                                  side: const BorderSide(color: Colors.white60),
+                                  onChanged: (v) => setState(() {
+                                    isMale = v!;
+                                    if (v) isFemale = false;
+                                  }),
+                                ),
+                                const Text("Male",
+                                    style: TextStyle(
+                                        color: Colors.white,
+                                        fontWeight: FontWeight.w500)),
+                              ],
+                            ),
+                            Row(
+                              children: [
+                                Checkbox(
+                                  value: isFemale,
+                                  activeColor: const Color(0xFF8000FF),
+                                  side: const BorderSide(color: Colors.white60),
+                                  onChanged: (v) => setState(() {
+                                    isFemale = v!;
+                                    if (v) isMale = false;
+                                  }),
+                                ),
+                                const Text("Female",
+                                    style: TextStyle(
+                                        color: Colors.white,
+                                        fontWeight: FontWeight.w500)),
+                              ],
+                            ),
+                          ],
+                        ),
+                      ),
+
+                      const SizedBox(height: 10),
+
+                      isRegistering
+                          ? const CircularProgressIndicator(
+                          color: Color(0xFF8000FF))
+                          : SizedBox(
+                        width: double.infinity,
+                        height: 52,
+                        child: ElevatedButton(
+                          onPressed: _registerUser,
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: const Color(0xFF8000FF),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(16),
+                            ),
+                            elevation: 5,
+                          ),
+                          child: const Text(
+                            "REGISTER",
+                            style: TextStyle(
+                              color: Colors.white,
+                              fontSize: 16,
+                              fontWeight: FontWeight.bold,
+                              letterSpacing: 1.0,
+                            ),
+                          ),
+                        ),
+                      ),
+
+                      const SizedBox(height: 20),
+
+                      // Added Sign-in Navigation Option
+                      GestureDetector(
+                        onTap: () {
+                          Navigator.pushReplacement(
+                            context,
+                            MaterialPageRoute(
+                              builder: (_) => LoginScreen(),
+                            ),
+                          );
+                        },
+                        child: const Text(
+                          "Already have an account? Sign in",
+                          style: TextStyle(
+                            color: Colors.white70,
+                            fontSize: 14,
+                            decoration: TextDecoration.underline,
+                            decorationColor: Colors.white70,
+                          ),
+                        ),
+                      ),
                     ],
                   ),
-                  const SizedBox(height: 20),
-                  isRegistering
-                      ? const CircularProgressIndicator()
-                      : ElevatedButton(onPressed: _registerUser, child: const Text("REGISTER")),
-                ],
+                ),
               ),
             ),
           ),
@@ -239,28 +393,33 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
     );
   }
 
-  Widget buildField(String hint, TextEditingController c, {bool isPass = false}) {
+  Widget buildField(
+      IconData icon, String hint, TextEditingController c,
+      {bool isPass = false}) {
     return Padding(
-      padding: const EdgeInsets.only(bottom: 12),
+      padding: const EdgeInsets.only(bottom: 16),
       child: TextFormField(
         controller: c,
         obscureText: isPass,
-        style: const TextStyle(color: Colors.black),
+        style: const TextStyle(color: Colors.white),
         decoration: InputDecoration(
+          prefixIcon: Icon(icon, color: const Color(0xFF8000FF)),
           hintText: hint,
+          hintStyle: const TextStyle(color: Colors.white60, fontSize: 14),
           filled: true,
-          fillColor: Colors.white,
-          border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+          fillColor: Colors.white.withOpacity(0.08),
+          contentPadding:
+          const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+          enabledBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(16),
+            borderSide: const BorderSide(color: Colors.white12),
+          ),
+          focusedBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(16),
+            borderSide: const BorderSide(color: Color(0xFF8000FF), width: 1.5),
+          ),
         ),
       ),
     );
-  }
-}
-
-class BlindDashboard extends StatelessWidget {
-  const BlindDashboard({super.key});
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(appBar: AppBar(title: const Text("Dashboard")));
   }
 }

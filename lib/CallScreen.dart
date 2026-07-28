@@ -812,7 +812,6 @@ class _CallScreenState extends State<CallScreen>
   bool _incomingCall = false;
   bool _offerCreated = false;
 
-  // Animation for End Call button pulse
   late AnimationController _endCallController;
   late Animation<double> _pulseAnimation;
 
@@ -823,7 +822,6 @@ class _CallScreenState extends State<CallScreen>
     super.initState();
     _player = AudioPlayer();
 
-    // End call pulse animation setup
     _endCallController = AnimationController(
       vsync: this,
       duration: const Duration(seconds: 1),
@@ -866,7 +864,11 @@ class _CallScreenState extends State<CallScreen>
       };
 
       final mediaConstraints = {
-        'audio': true,
+        'audio': {
+          'echoCancellation': true,
+          'noiseSuppression': true,
+          'autoGainControl': true,
+        },
         'video': {
           'mandatory': {
             'minWidth': '320',
@@ -883,6 +885,10 @@ class _CallScreenState extends State<CallScreen>
       _localStream =
       await navigator.mediaDevices.getUserMedia(mediaConstraints);
 
+      for (var track in _localStream!.getAudioTracks()) {
+        track.enabled = true;
+      }
+
       _localStream!.getTracks().forEach((track) {
         _peerConnection!.addTrack(track, _localStream!);
       });
@@ -895,9 +901,25 @@ class _CallScreenState extends State<CallScreen>
 
       _peerConnection!.onTrack = (RTCTrackEvent event) {
         print('🎥 Remote track received: ${event.track.kind}');
-        if (event.streams.isNotEmpty && mounted) {
+        if (event.streams.isNotEmpty) {
+          for (var track in event.streams[0].getAudioTracks()) {
+            track.enabled = true;
+          }
+          if (mounted) {
+            setState(() {
+              _remoteRenderer!.srcObject = event.streams[0];
+            });
+          }
+        }
+      };
+
+      _peerConnection!.onAddStream = (MediaStream stream) {
+        for (var track in stream.getAudioTracks()) {
+          track.enabled = true;
+        }
+        if (mounted) {
           setState(() {
-            _remoteRenderer!.srcObject = event.streams[0];
+            _remoteRenderer!.srcObject = stream;
           });
         }
       };
@@ -921,7 +943,7 @@ class _CallScreenState extends State<CallScreen>
         }).catchError((e) => print('❌ ICE candidate error: $e'));
       };
 
-      print('✅ WebRTC initialized successfully');
+      print('✅ WebRTC initialized successfully with full fix');
     } catch (e, stack) {
       print('❌ WebRTC initialization error: $e');
       print(stack);
@@ -1197,7 +1219,6 @@ class _CallScreenState extends State<CallScreen>
   void _switchCamera() {
     _isFrontCamera = !_isFrontCamera;
     _localStream?.getVideoTracks().forEach((track) {
-      // RTC video track camera switch logic
       Helper.switchCamera(track);
     });
     if (mounted) setState(() {});
@@ -1261,7 +1282,6 @@ class _CallScreenState extends State<CallScreen>
       body: SafeArea(
         child: Stack(
           children: [
-            // 1. Fullscreen Remote Video Feed / Gradient Placeholder
             Positioned.fill(
               child: _remoteRenderer != null &&
                   _remoteRenderer!.srcObject != null
@@ -1316,8 +1336,6 @@ class _CallScreenState extends State<CallScreen>
                 ),
               ),
             ),
-
-            // 2. Call Duration Timer (Top Center)
             Positioned(
               top: 20,
               left: 0,
@@ -1344,8 +1362,6 @@ class _CallScreenState extends State<CallScreen>
                 ),
               ),
             ),
-
-            // 3. Floating Picture-in-Picture Self Camera (Top Right)
             Positioned(
               top: 80,
               right: 20,
@@ -1380,8 +1396,6 @@ class _CallScreenState extends State<CallScreen>
                 ),
               ),
             ),
-
-            // 4. Incoming Call Modal (Overlay for Volunteer)
             if (_incomingCall && widget.userType == 'volunteer')
               Center(
                 child: Container(
@@ -1445,8 +1459,6 @@ class _CallScreenState extends State<CallScreen>
                   ),
                 ),
               ),
-
-            // 5. Bottom Controls (Mute, Camera Switch, Speaker, Pulsing End Call)
             Positioned(
               bottom: 40,
               left: 0,
@@ -1454,7 +1466,6 @@ class _CallScreenState extends State<CallScreen>
               child: Row(
                 mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                 children: [
-                  // Mute Button
                   CircleAvatar(
                     radius: 30,
                     backgroundColor: _isMuted
@@ -1469,8 +1480,6 @@ class _CallScreenState extends State<CallScreen>
                       onPressed: _toggleMute,
                     ),
                   ),
-
-                  // Switch Camera
                   CircleAvatar(
                     radius: 30,
                     backgroundColor: Colors.grey[800],
@@ -1483,8 +1492,6 @@ class _CallScreenState extends State<CallScreen>
                       onPressed: _switchCamera,
                     ),
                   ),
-
-                  // Speaker Button
                   CircleAvatar(
                     radius: 30,
                     backgroundColor: _isLoudspeaker
@@ -1499,8 +1506,6 @@ class _CallScreenState extends State<CallScreen>
                       onPressed: _toggleSpeaker,
                     ),
                   ),
-
-                  // End Call Button with Pulse Animation
                   ScaleTransition(
                     scale: _pulseAnimation,
                     child: CircleAvatar(

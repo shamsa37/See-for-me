@@ -178,7 +178,6 @@ import 'package:project/BlindDashboardScreen.dart';
 import 'package:project/sos_screen.dart'; // File import
 import 'package:project/EmergencyScreen.dart';
 import 'package:project/EmergencyHelp.dart';
-import 'package:project/OfflineScreen.dart';
 import 'package:project/ScenedescriptionScreen.dart';
 import 'package:project/SettingScreen.dart';
 import 'package:project/EditProfileScreen.dart';
@@ -264,9 +263,6 @@ class MyApp extends StatelessWidget {
             break;
           case '/emergencyhelp':
             builder = (_) => EmergencyHelp();
-            break;
-          case '/offline':
-            builder = (_) => OfflineScreen();
             break;
           case '/scene':
             builder = (_) => ScenedescriptionScreen();

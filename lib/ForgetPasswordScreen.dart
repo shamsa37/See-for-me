@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 
 class ForgetPasswordScreen extends StatefulWidget {
   const ForgetPasswordScreen({super.key});
@@ -10,6 +11,7 @@ class ForgetPasswordScreen extends StatefulWidget {
 class _ForgetPasswordScreenState extends State<ForgetPasswordScreen>
     with TickerProviderStateMixin {
   final TextEditingController emailController = TextEditingController();
+  bool isLoading = false;
 
   late AnimationController _controller;
   late Animation<double> _fadeAnimation;
@@ -19,8 +21,8 @@ class _ForgetPasswordScreenState extends State<ForgetPasswordScreen>
   void initState() {
     super.initState();
 
-    _controller =
-        AnimationController(vsync: this, duration: const Duration(milliseconds: 800));
+    _controller = AnimationController(
+        vsync: this, duration: const Duration(milliseconds: 800));
 
     _fadeAnimation = CurvedAnimation(
       parent: _controller,
@@ -37,6 +39,62 @@ class _ForgetPasswordScreenState extends State<ForgetPasswordScreen>
     _controller.forward();
   }
 
+  // ================= FIREBASE RESET LINK SENDER =================
+  Future<void> _sendResetLink() async {
+    String email = emailController.text.trim();
+
+    if (email.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text("Please enter your email address"),
+          backgroundColor: Colors.orangeAccent,
+        ),
+      );
+      return;
+    }
+
+    setState(() => isLoading = true);
+
+    try {
+      await FirebaseAuth.instance.sendPasswordResetEmail(email: email);
+
+      if (!mounted) return;
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text("Password reset link sent to your email!"),
+          backgroundColor: Colors.green,
+        ),
+      );
+
+      // Successfully sent hone ke baad screen back ho sakti hai
+      Navigator.pop(context);
+    } on FirebaseAuthException catch (e) {
+      String errorMessage = "Failed to send reset link";
+      if (e.code == "user-not-found") {
+        errorMessage = "No registered user found with this email.";
+      } else if (e.code == "invalid-email") {
+        errorMessage = "Please enter a valid email address.";
+      }
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(errorMessage),
+          backgroundColor: Colors.redAccent,
+        ),
+      );
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text("Error: $e"),
+          backgroundColor: Colors.redAccent,
+        ),
+      );
+    } finally {
+      if (mounted) setState(() => isLoading = false);
+    }
+  }
+
   @override
   void dispose() {
     _controller.dispose();
@@ -47,6 +105,15 @@ class _ForgetPasswordScreenState extends State<ForgetPasswordScreen>
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      appBar: AppBar(
+        backgroundColor: Colors.transparent,
+        elevation: 0,
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back, color: Colors.white),
+          onPressed: () => Navigator.pop(context),
+        ),
+      ),
+      extendBodyBehindAppBar: true,
       body: Container(
         decoration: const BoxDecoration(
           gradient: LinearGradient(
@@ -85,6 +152,7 @@ class _ForgetPasswordScreenState extends State<ForgetPasswordScreen>
                     TextField(
                       controller: emailController,
                       style: const TextStyle(color: Colors.white),
+                      keyboardType: TextInputType.emailAddress,
                       decoration: InputDecoration(
                         labelText: "Email",
                         labelStyle: const TextStyle(color: Colors.white70),
@@ -114,14 +182,17 @@ class _ForgetPasswordScreenState extends State<ForgetPasswordScreen>
                           borderRadius: BorderRadius.circular(12),
                         ),
                       ),
-                      onPressed: () {
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(
-                            content: Text("Reset link sent to email"),
-                          ),
-                        );
-                      },
-                      child: const Text("Send Reset Link"),
+                      onPressed: isLoading ? null : _sendResetLink,
+                      child: isLoading
+                          ? const SizedBox(
+                        height: 20,
+                        width: 20,
+                        child: CircularProgressIndicator(
+                          color: Colors.white,
+                          strokeWidth: 2,
+                        ),
+                      )
+                          : const Text("Send Reset Link"),
                     ),
                   ],
                 ),

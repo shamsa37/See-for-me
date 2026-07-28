@@ -1,11 +1,9 @@
+
 // import 'dart:ui';
 // import 'package:flutter/material.dart';
 // import 'package:project/VolunteerDashboard.dart';
 // import 'package:project/VolunteerRegScreen.dart';
-// import 'package:project/VolForgotPasswordScreen.dart';
-// import 'package:project/auth_service.dart';
 // import 'package:firebase_auth/firebase_auth.dart';
-// import 'package:cloud_firestore/cloud_firestore.dart';
 // import 'package:google_sign_in/google_sign_in.dart';
 //
 // class VolunteerLoginScreen extends StatefulWidget {
@@ -21,7 +19,9 @@
 //   final _formKey = GlobalKey<FormState>();
 //
 //   bool isLoading = false;
+//   final GoogleSignIn _googleSignIn = GoogleSignIn();
 //
+//   // ================= LOGIN =================
 //   void _login() async {
 //     String email = emailController.text.trim();
 //     String password = passwordController.text.trim();
@@ -38,117 +38,93 @@
 //
 //     setState(() => isLoading = true);
 //
-//     final AuthService _authService = AuthService(); // Single instance
-//
 //     try {
-//       // 1️⃣ Login using Firebase Auth
-//       await _authService.loginUser(email, password);
+//       await FirebaseAuth.instance.signInWithEmailAndPassword(
+//         email: email,
+//         password: password,
+//       );
 //
-//       // 2️⃣ Get current user
-//       final User? user = _authService.currentUser();
-//       if (user == null) throw Exception("User not found after login");
-//
-//       // 3️⃣ Get user document from Firestore
-//       final DocumentSnapshot<Map<String, dynamic>> userDoc =
-//       await _authService.getUserDoc(user.uid);
-//
-//       final Map<String, dynamic>? data = userDoc.data();
-//       if (data == null || !data.containsKey('role')) {
-//         throw Exception("Role not defined for this user");
-//       }
-//
-//       // 4️⃣ Role check
-//       final String role = data['role'] as String;
-//       if (role != 'volunteer') {
-//         throw Exception("This account is not registered as a Volunteer");
-//       }
-//
-//       // 5️⃣ Navigate to Volunteer Dashboard
 //       if (!mounted) return;
+//
 //       Navigator.pushReplacement(
 //         context,
-//         MaterialPageRoute(builder: (_) => VolunteerDashboard()),
+//         MaterialPageRoute(builder: (_) => const VolunteerDashboard()),
 //       );
-//
 //     } on FirebaseAuthException catch (e) {
-//       // Handle Firebase Auth errors
-//       String message;
-//       if (e.code == 'user-not-found') {
-//         message = 'No user found for this email.';
-//       } else if (e.code == 'wrong-password') {
-//         message = 'Wrong password provided.';
-//       } else {
-//         message = e.message ?? 'Login failed.';
+//       String msg = "Login failed";
+//
+//       if (e.code == "user-not-found") {
+//         msg = "No user found";
+//       } else if (e.code == "wrong-password") {
+//         msg = "Wrong password";
+//       } else if (e.code == "invalid-email") {
+//         msg = "Invalid email";
 //       }
 //
-//       if (!mounted) return;
 //       ScaffoldMessenger.of(context).showSnackBar(
-//         SnackBar(content: Text(message), backgroundColor: Colors.red),
+//         SnackBar(content: Text(msg), backgroundColor: Colors.red),
 //       );
-//
-//     } catch (e) {
-//       // Handle other errors (Firestore or role issues)
-//       if (!mounted) return;
-//       ScaffoldMessenger.of(context).showSnackBar(
-//         SnackBar(content: Text(e.toString()), backgroundColor: Colors.red),
-//       );
-//
 //     } finally {
 //       if (mounted) setState(() => isLoading = false);
 //     }
 //   }
 //
-//   Future<void> _googleSignIn() async {
+//   // ================= GOOGLE SIGN-IN =================
+//   Future<void> _handleGoogleSignIn() async {
 //     try {
 //       setState(() => isLoading = true);
 //
-//       final GoogleSignInAccount? googleUser = await GoogleSignIn().signIn();
+//       final googleUser = await _googleSignIn.signIn();
+//       if (googleUser == null) return;
 //
-//       if (googleUser == null) {
-//         setState(() => isLoading = false);
-//         return; // user cancelled
-//       }
-//
-//       final GoogleSignInAuthentication googleAuth =
-//       await googleUser.authentication;
+//       final googleAuth = await googleUser.authentication;
 //
 //       final credential = GoogleAuthProvider.credential(
 //         accessToken: googleAuth.accessToken,
 //         idToken: googleAuth.idToken,
 //       );
 //
-//       // Firebase sign-in
-//       UserCredential userCredential =
 //       await FirebaseAuth.instance.signInWithCredential(credential);
-//
-//       // Firestore me check/create user
-//       DocumentReference userRef =
-//       FirebaseFirestore.instance.collection('users').doc(userCredential.user!.uid);
-//
-//       DocumentSnapshot userDoc = await userRef.get();
-//
-//       await userRef.set({
-//         'email': userCredential.user!.email,
-//         'role': 'volunteer',
-//       }, SetOptions(merge: true));
 //
 //       if (!mounted) return;
 //
 //       Navigator.pushReplacement(
 //         context,
-//         MaterialPageRoute(builder: (_) => VolunteerDashboard()),
+//         MaterialPageRoute(builder: (_) => const VolunteerDashboard()),
 //       );
-//
 //     } catch (e) {
-//       if (!mounted) return;
 //       ScaffoldMessenger.of(context).showSnackBar(
-//         SnackBar(
-//           content: Text("Google Sign-In failed"),
-//           backgroundColor: Colors.red,
-//         ),
+//         SnackBar(content: Text("Google Sign-in failed: $e")),
 //       );
 //     } finally {
 //       if (mounted) setState(() => isLoading = false);
+//     }
+//   }
+//
+//   // ================= FORGOT PASSWORD =================
+//   void _resetPassword() async {
+//     String email = emailController.text.trim();
+//
+//     if (email.isEmpty) {
+//       ScaffoldMessenger.of(context).showSnackBar(
+//         const SnackBar(content: Text("Enter email first")),
+//       );
+//       return;
+//     }
+//
+//     try {
+//       await FirebaseAuth.instance.sendPasswordResetEmail(email: email);
+//
+//       ScaffoldMessenger.of(context).showSnackBar(
+//         const SnackBar(
+//           content: Text("Password reset link sent"),
+//           backgroundColor: Colors.green,
+//         ),
+//       );
+//     } catch (e) {
+//       ScaffoldMessenger.of(context).showSnackBar(
+//         SnackBar(content: Text("Error: $e")),
+//       );
 //     }
 //   }
 //
@@ -200,13 +176,6 @@
 //                       color: const Color(0xFF8000FF).withOpacity(0.5),
 //                       width: 1.8,
 //                     ),
-//                     boxShadow: [
-//                       BoxShadow(
-//                         color: const Color(0xFF8000FF).withOpacity(0.25),
-//                         blurRadius: 20,
-//                         offset: const Offset(0, 8),
-//                       ),
-//                     ],
 //                   ),
 //                   child: Form(
 //                     key: _formKey,
@@ -221,29 +190,29 @@
 //                             fontWeight: FontWeight.bold,
 //                           ),
 //                         ),
+//
 //                         const SizedBox(height: 30),
+//
 //                         _buildTextField(
 //                           controller: emailController,
 //                           icon: Icons.email,
 //                           hint: "Email",
 //                         ),
+//
 //                         const SizedBox(height: 15),
+//
 //                         _buildTextField(
 //                           controller: passwordController,
 //                           icon: Icons.lock,
 //                           hint: "Password",
 //                           isPassword: true,
 //                         ),
+//
 //                         const SizedBox(height: 15),
+//
+//                         // ================= FORGOT PASSWORD =================
 //                         GestureDetector(
-//                           onTap: () {
-//                             Navigator.push(
-//                               context,
-//                               MaterialPageRoute(
-//                                 builder: (context) => VolForgotPasswordScreen(),
-//                               ),
-//                             );
-//                           },
+//                           onTap: _resetPassword,
 //                           child: const Text(
 //                             "Forgot Password?",
 //                             style: TextStyle(
@@ -253,38 +222,25 @@
 //                             ),
 //                           ),
 //                         ),
+//
 //                         const SizedBox(height: 25),
+//
 //                         if (isLoading)
-//                           const Padding(
-//                             padding: EdgeInsets.only(bottom: 15),
-//                             child: CircularProgressIndicator(
-//                               color: Color(0xFF8000FF),
-//                             ),
+//                           const CircularProgressIndicator(
+//                             color: Color(0xFF8000FF),
 //                           ),
-//                         Container(
+//
+//                         const SizedBox(height: 10),
+//
+//                         // ================= LOGIN BUTTON =================
+//                         SizedBox(
 //                           width: double.infinity,
-//                           decoration: BoxDecoration(
-//                             borderRadius: BorderRadius.circular(15),
-//                             gradient: const LinearGradient(
-//                               colors: [Color(0xFF8000FF), Color(0xFF570A57)],
-//                             ),
-//                           ),
 //                           child: ElevatedButton(
 //                             style: ElevatedButton.styleFrom(
-//                               backgroundColor: Colors.transparent,
-//                               shadowColor: Colors.transparent,
+//                               backgroundColor: const Color(0xFF8000FF),
 //                               padding: const EdgeInsets.symmetric(vertical: 16),
-//                               shape: RoundedRectangleBorder(
-//                                 borderRadius: BorderRadius.circular(15),
-//                               ),
 //                             ),
-//                             onPressed: isLoading
-//                                 ? null
-//                                 : () {
-//                               if (_formKey.currentState!.validate()) {
-//                                 _login();
-//                               }
-//                             },
+//                             onPressed: isLoading ? null : _login,
 //                             child: const Text(
 //                               "Login",
 //                               style: TextStyle(
@@ -295,71 +251,41 @@
 //                             ),
 //                           ),
 //                         ),
+//
 //                         const SizedBox(height: 25),
-//                         Row(
-//                           children: const [
-//                             Expanded(child: Divider(color: Colors.white24)),
-//                             Padding(
-//                               padding: EdgeInsets.symmetric(horizontal: 10),
-//                               child: Text("OR",
-//                                   style: TextStyle(color: Colors.white54)),
-//                             ),
-//                             Expanded(child: Divider(color: Colors.white24)),
-//                           ],
-//                         ),
+//
+//                         const Text("OR",
+//                             style: TextStyle(color: Colors.white54)),
+//
 //                         const SizedBox(height: 20),
-//                         Row(
-//                           mainAxisAlignment: MainAxisAlignment.center,
-//                           children: [
-//                             GestureDetector(
-//                               onTap: isLoading ? null : _googleSignIn,
-//                               child: Container(
-//                                 padding: const EdgeInsets.all(14),
-//                                 decoration: const BoxDecoration(
-//                                   shape: BoxShape.circle,
-//                                   color: Colors.white,
-//                                 ),
-//                                 child: Image.asset(
-//                                   "assets/images/image.jpg",
-//                                   height: 26,
-//                                 )
-//                               ),
+//
+//                         GestureDetector(
+//                           onTap: isLoading ? null : _handleGoogleSignIn,
+//                           child: Container(
+//                             padding: const EdgeInsets.all(14),
+//                             decoration: const BoxDecoration(
+//                               shape: BoxShape.circle,
+//                               color: Colors.white,
 //                             ),
-//                             const SizedBox(width: 25),
-//                             GestureDetector(
-//                               onTap: isLoading
-//                                   ? null
-//                                   : () {
-//                                 if (_formKey.currentState!.validate()) {
-//                                   _login();
-//                                 }
-//                               },
-//                               child: Container(
-//                                 padding: const EdgeInsets.all(14),
-//                                 decoration: const BoxDecoration(
-//                                   shape: BoxShape.circle,
-//                                   color: Color(0xFF8000FF),
-//                                 ),
-//                                 child: const Icon(
-//                                   Icons.email,
-//                                   color: Colors.white,
-//                                   size: 26,
-//                                 ),
-//                               ),
+//                             child: const Icon(
+//                               Icons.g_mobiledata,
+//                               size: 30,
+//                               color: Colors.black,
 //                             ),
-//                           ],
+//                           ),
 //                         ),
+//
 //                         const SizedBox(height: 25),
+//
 //                         GestureDetector(
 //                           onTap: () {
-//                             if (!isLoading) {
-//                               Navigator.push(
-//                                 context,
-//                                 MaterialPageRoute(
-//                                   builder: (context) => VolunteerRegScreen(),
-//                                 ),
-//                               );
-//                             }
+//                             Navigator.push(
+//                               context,
+//                               MaterialPageRoute(
+//                                 builder: (context) =>
+//                                 const VolunteerRegScreen(),
+//                               ),
+//                             );
 //                           },
 //                           child: const Text.rich(
 //                             TextSpan(
@@ -398,23 +324,6 @@
 //     return TextFormField(
 //       controller: controller,
 //       obscureText: isPassword,
-//       validator: (value) {
-//         if (value == null || value.isEmpty) {
-//           return "$hint is required";
-//         }
-//
-//         if (hint == "Email" && !value.contains("@")) {
-//           return "Enter valid email";
-//         }
-//
-//         if (hint == "Password") {
-//           if (value.length < 6) {
-//             return "Password must be at least 6 characters";
-//           }
-//         }
-//
-//         return null;
-//       },
 //       style: const TextStyle(color: Colors.white),
 //       decoration: InputDecoration(
 //         prefixIcon: Icon(icon, color: const Color(0xFF8000FF)),
@@ -422,14 +331,9 @@
 //         hintStyle: TextStyle(color: Colors.white.withOpacity(0.7)),
 //         filled: true,
 //         fillColor: Colors.white.withOpacity(0.08),
-//         enabledBorder: OutlineInputBorder(
+//         border: OutlineInputBorder(
 //           borderRadius: BorderRadius.circular(15),
-//           borderSide:
-//           BorderSide(color: const Color(0xFF8000FF).withOpacity(0.3)),
-//         ),
-//         focusedBorder: OutlineInputBorder(
-//           borderRadius: BorderRadius.circular(15),
-//           borderSide: const BorderSide(color: Color(0xFF8000FF), width: 2),
+//           borderSide: BorderSide.none,
 //         ),
 //       ),
 //     );
@@ -447,6 +351,7 @@ import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:project/VolunteerDashboard.dart';
 import 'package:project/VolunteerRegScreen.dart';
+import 'package:project/ForgetPasswordScreen.dart'; // Import added
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 
@@ -545,33 +450,6 @@ class _VolunteerLoginScreenState extends State<VolunteerLoginScreen> {
     }
   }
 
-  // ================= FORGOT PASSWORD =================
-  void _resetPassword() async {
-    String email = emailController.text.trim();
-
-    if (email.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text("Enter email first")),
-      );
-      return;
-    }
-
-    try {
-      await FirebaseAuth.instance.sendPasswordResetEmail(email: email);
-
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text("Password reset link sent"),
-          backgroundColor: Colors.green,
-        ),
-      );
-    } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text("Error: $e")),
-      );
-    }
-  }
-
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -654,9 +532,16 @@ class _VolunteerLoginScreenState extends State<VolunteerLoginScreen> {
 
                         const SizedBox(height: 15),
 
-                        // ================= FORGOT PASSWORD =================
+                        // ================= FORGOT PASSWORD NAVIGATION =================
                         GestureDetector(
-                          onTap: _resetPassword,
+                          onTap: () {
+                            Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (_) => const ForgetPasswordScreen(),
+                              ),
+                            );
+                          },
                           child: const Text(
                             "Forgot Password?",
                             style: TextStyle(

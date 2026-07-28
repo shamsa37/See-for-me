@@ -76,7 +76,6 @@ import 'CallScreen.dart';
 import 'package:flutter_tts/flutter_tts.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'package:flutter_webrtc/flutter_webrtc.dart';
 import 'package:geolocator/geolocator.dart';
 
 class CallVolunteerScreen extends StatefulWidget {
@@ -99,16 +98,7 @@ class _CallVolunteerScreenState extends State<CallVolunteerScreen> {
 
   StreamSubscription? _requestSub;
   StreamSubscription? _sessionSub;
-  StreamSubscription? _answerSub;
-  StreamSubscription? _iceSub;
   Timer? _waitingTimer;
-
-  RTCPeerConnection? _peerConnection;
-  MediaStream? _localStream;
-  RTCVideoRenderer? _localRenderer;
-
-  bool _remoteDescriptionSet = false;
-  bool _signalingStarted = false;
 
   String? get currentUid => FirebaseAuth.instance.currentUser?.uid;
 
@@ -163,7 +153,9 @@ class _CallVolunteerScreenState extends State<CallVolunteerScreen> {
         'timestamp': FieldValue.serverTimestamp(),
       });
 
-      setState(() => _status = 'waiting for volunteer');
+      if (mounted) {
+        setState(() => _status = 'waiting for volunteer');
+      }
       await _tts.speak("Searching for volunteer....");
 
       _listenForVolunteerAccept();
@@ -175,6 +167,8 @@ class _CallVolunteerScreenState extends State<CallVolunteerScreen> {
 
   // ================= LISTEN FOR VOLUNTEER ACCEPT =================
   void _listenForVolunteerAccept() {
+    if (_requestId == null) return;
+
     _requestSub = FirebaseFirestore.instance
         .collection('requests')
         .doc(_requestId)
@@ -185,7 +179,9 @@ class _CallVolunteerScreenState extends State<CallVolunteerScreen> {
 
         final data = snapshot.data() as Map<String, dynamic>;
 
-        setState(() => _status = data['status'] ?? 'pending');
+        if (mounted) {
+          setState(() => _status = data['status'] ?? 'pending');
+        }
 
         final incomingSessionId = data['sessionId'] as String?;
         final incomingVolunteerId = data['volunteerId'] as String?;
@@ -200,221 +196,57 @@ class _CallVolunteerScreenState extends State<CallVolunteerScreen> {
           _sessionId = incomingSessionId;
 
           _stopWaitingTimer();
-          setState(() => _status = 'connecting');
+          if (mounted) {
+            setState(() => _status = 'connecting');
+          }
 
           await _tts.speak("Volunteer connected. Starting video call");
 
-          // Start signaling on existing session
-          await _startSignaling();
+          // Session status ko listen karein
+          _listenSession();
         }
 
         // Call rejected
         if (data['status'] == 'rejected') {
           print('❌ Volunteer rejected');
           await _tts.speak("Volunteer rejected the call");
-          setState(() => _showAlternativeOptions = true);
+          if (mounted) {
+            setState(() => _showAlternativeOptions = true);
+          }
         }
       },
       onError: (e) => print('❌ Request listener error: $e'),
     );
   }
 
-  // ================= START SIGNALING =================
-  Future<void> _startSignaling() async {
-    if (_signalingStarted) return;
-    _signalingStarted = true;
-
-    try {
-      await _initWebRTC();
-      await _createOffer();
-      _listenSession();
-      _listenAnswer();
-      _listenIceCandidates();
-
-      print('✅ Signaling started');
-    } catch (e) {
-      print('❌ Signaling error: $e');
-      _showError("Connection error: $e");
-    }
-  }
-
-  // ================= WEBRTC INITIALIZATION =================
-  Future<void> _initWebRTC() async {
-    try {
-      final config = {
-        "iceServers": [
-          {"urls": ["stun:stun.l.google.com:19302"]},
-          {"urls": ["stun:stun1.l.google.com:19302"]},
-        ]
-      };
-
-      final mediaConstraints = {
-        'audio': true,
-        'video': {
-          'mandatory': {
-            'minWidth': '320',
-            'minHeight': '240',
-            'minFrameRate': '15',
-          },
-          'facingMode': 'user',
-          'optional': [],
-        }
-      };
-
-      _peerConnection = await createPeerConnection(config, mediaConstraints);
-
-      // Get local media stream
-      _localStream = await navigator.mediaDevices.getUserMedia(mediaConstraints);
-
-      // Add tracks to peer connection
-      _localStream!.getTracks().forEach((track) {
-        _peerConnection!.addTrack(track, _localStream!);
-      });
-
-      print('✅ WebRTC initialized');
-
-      // Handle ICE candidates
-      _peerConnection!.onIceCandidate = (RTCIceCandidate candidate) {
-        if (candidate == null || _sessionId == null) return;
-
-        FirebaseFirestore.instance
-            .collection('sessions')
-            .doc(_sessionId)
-            .collection('callerCandidates')
-            .add({
-          'candidate': candidate.candidate,
-          'sdpMid': candidate.sdpMid,
-          'sdpMLineIndex': candidate.sdpMLineIndex,
-          'timestamp': FieldValue.serverTimestamp(),
-        }).catchError((e) => print('❌ ICE candidate add error: $e'));
-      };
-
-      // Handle remote stream
-      _peerConnection!.onTrack = (RTCTrackEvent event) {
-        print('🎥 Remote track received: ${event.track.kind}');
-      };
-
-      print('✅ Media stream acquired');
-    } catch (e) {
-      print('❌ WebRTC init error: $e');
-      throw Exception('Failed to initialize WebRTC: $e');
-    }
-  }
-
-  // ================= CREATE OFFER =================
-  Future<void> _createOffer() async {
-    try {
-      RTCSessionDescription offer = await _peerConnection!.createOffer();
-
-      await _peerConnection!.setLocalDescription(offer);
-
-      await FirebaseFirestore.instance
-          .collection('sessions')
-          .doc(_sessionId)
-          .update({
-        'offer': {
-          'type': offer.type,
-          'sdp': offer.sdp,
-        },
-        'status': 'waiting',
-        'offerCreatedAt': FieldValue.serverTimestamp(),
-      });
-
-      print('✅ Offer created and sent');
-    } catch (e) {
-      print('❌ Create offer error: $e');
-      throw Exception('Failed to create offer: $e');
-    }
-  }
-
-  // ================= LISTEN FOR ANSWER =================
-  void _listenAnswer() {
-    _answerSub = FirebaseFirestore.instance
-        .collection('sessions')
-        .doc(_sessionId)
-        .snapshots()
-        .listen(
-          (doc) async {
-        final data = doc.data();
-        if (data == null) return;
-
-        // Set remote description once answer arrives
-        if (data['answer'] != null &&
-            !_remoteDescriptionSet &&
-            _peerConnection != null) {
-          try {
-            _remoteDescriptionSet = true;
-
-            await _peerConnection!.setRemoteDescription(
-              RTCSessionDescription(
-                data['answer']['sdp'],
-                data['answer']['type'],
-              ),
-            );
-
-            print('✅ Answer received and set');
-          } catch (e) {
-            print('❌ Set remote description error: $e');
-          }
-        }
-      },
-      onError: (e) => print('❌ Answer listener error: $e'),
-    );
-  }
-
-  // ================= LISTEN FOR ICE CANDIDATES =================
-  void _listenIceCandidates() {
-    _iceSub = FirebaseFirestore.instance
-        .collection('sessions')
-        .doc(_sessionId)
-        .collection('calleeCandidates')
-        .snapshots()
-        .listen(
-          (snapshot) {
-        for (var change in snapshot.docChanges) {
-          if (change.type == DocumentChangeType.added) {
-            final data = change.doc.data();
-            if (data == null || _peerConnection == null) continue;
-
-            try {
-              _peerConnection!.addCandidate(
-                RTCIceCandidate(
-                  data['candidate'],
-                  data['sdpMid'],
-                  data['sdpMLineIndex'],
-                ),
-              );
-              print('✅ ICE candidate added');
-            } catch (e) {
-              print('❌ Add ICE candidate error: $e');
-            }
-          }
-        }
-      },
-      onError: (e) => print('❌ ICE listener error: $e'),
-    );
-  }
-
   // ================= LISTEN SESSION STATUS =================
   void _listenSession() {
+    if (_sessionId == null) return;
+
     _sessionSub = FirebaseFirestore.instance
         .collection('sessions')
         .doc(_sessionId)
         .snapshots()
         .listen(
           (snapshot) {
+        if (!snapshot.exists) return;
         final data = snapshot.data();
         if (data == null) return;
 
         final status = data['status'] as String?;
 
-        setState(() => _status = status ?? 'connecting');
+        if (mounted) {
+          setState(() => _status = status ?? 'connecting');
+        }
 
         print('📱 Session status: $status');
 
-        // Call is active - navigate to call screen
-        if (status == 'active') {
+        // Volunteer ne accept kar liya (Status 'waiting' ya 'active' hai) -> Navigate to CallScreen
+        if ((status == 'waiting' || status == 'active') && mounted) {
           print('✅ Call active - navigating to call screen');
+
+          // Streams cancel karein navigation se pehle
+          _cleanupListeners();
 
           Navigator.pushReplacement(
             context,
@@ -431,9 +263,9 @@ class _CallVolunteerScreenState extends State<CallVolunteerScreen> {
         // Call ended
         if (status == 'ended') {
           print('☎️ Call ended');
-
-          setState(() => _showAlternativeOptions = true);
-
+          if (mounted) {
+            setState(() => _showAlternativeOptions = true);
+          }
           _cleanup();
         }
       },
@@ -465,7 +297,6 @@ class _CallVolunteerScreenState extends State<CallVolunteerScreen> {
   // ================= CANCEL CALL =================
   Future<void> _cancelCall() async {
     try {
-      // Update request status
       if (_requestId != null) {
         await FirebaseFirestore.instance
             .collection('requests')
@@ -476,7 +307,6 @@ class _CallVolunteerScreenState extends State<CallVolunteerScreen> {
         });
       }
 
-      // Update session status if exists
       if (_sessionId != null) {
         await FirebaseFirestore.instance
             .collection('sessions')
@@ -493,19 +323,18 @@ class _CallVolunteerScreenState extends State<CallVolunteerScreen> {
       if (mounted) Navigator.of(context).pop();
     } catch (e) {
       print('❌ Cancel call error: $e');
-      if (mounted) Navigator.of(context).pop();
+      if (mounted && Navigator.canPop(context)) Navigator.of(context).pop();
     }
   }
 
-  // ================= CLEANUP =================
-  void _cleanup() {
+  void _cleanupListeners() {
     _stopWaitingTimer();
-    _localStream?.getTracks().forEach((track) => track.stop());
-    _peerConnection?.close();
     _requestSub?.cancel();
     _sessionSub?.cancel();
-    _answerSub?.cancel();
-    _iceSub?.cancel();
+  }
+
+  void _cleanup() {
+    _cleanupListeners();
   }
 
   void _showError(String msg) {
@@ -544,9 +373,7 @@ class _CallVolunteerScreenState extends State<CallVolunteerScreen> {
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            const CircularProgressIndicator(
-              strokeWidth: 3,
-            ),
+            const CircularProgressIndicator(strokeWidth: 3),
             const SizedBox(height: 30),
             Text(
               _status,
